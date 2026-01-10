@@ -18,12 +18,12 @@ class ModelPricing:
 # OpenAI Pricing (as of January 2026)
 OPENAI_PRICING: dict[str, ModelPricing] = {
     # GPT-4o series
-    "gpt-4o": ModelPricing(2.50, 10.00, 1.25),
-    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00, 1.25),
-    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00, 1.25),
+    "gpt-4o": ModelPricing(2.50, 10.00, 0.63),
+    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00, 0.63),
+    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00, 0.63),
     "gpt-4o-2024-05-13": ModelPricing(5.00, 15.00),
-    "gpt-4o-mini": ModelPricing(0.15, 0.60, 0.075),
-    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60, 0.075),
+    "gpt-4o-mini": ModelPricing(0.15, 0.60, 0.04),
+    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60, 0.04),
     # GPT-4 Turbo
     "gpt-4-turbo": ModelPricing(10.00, 30.00),
     "gpt-4-turbo-2024-04-09": ModelPricing(10.00, 30.00),
@@ -79,10 +79,10 @@ GOOGLE_PRICING: dict[str, ModelPricing] = {
 
 # Mistral Pricing (as of January 2026)
 MISTRAL_PRICING: dict[str, ModelPricing] = {
-    "mistral-large-latest": ModelPricing(2.00, 6.00),
-    "mistral-medium-latest": ModelPricing(2.70, 8.10),
-    "mistral-small-latest": ModelPricing(0.20, 0.60),
-    "open-mistral-7b": ModelPricing(0.25, 0.25),
+    "mistral-large-latest": ModelPricing(0.50, 1.50),
+    "mistral-medium-latest": ModelPricing(0.40, 2.00),
+    "mistral-small-latest": ModelPricing(0.06, 0.18),
+    "open-mistral-7b": ModelPricing(0.15, 0.15),  # Ministral 8B equivalent
     "open-mixtral-8x7b": ModelPricing(0.70, 0.70),
 }
 
