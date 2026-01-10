@@ -92,13 +92,24 @@ class HealthResponse(BaseModel):
     version: str
 
 
+# Module-level connection for reuse
+_connection = None
+
+
+def _get_connection():
+    """Get or create a reusable database connection"""
+    global _connection
+    if _connection is None:
+        import psycopg2
+
+        config = get_config()
+        _connection = psycopg2.connect(config.database_url)
+    return _connection
+
+
 def get_queries() -> TokenLedgerQueries:
     """Get queries instance with database connection"""
-    import psycopg2
-
-    config = get_config()
-    conn = psycopg2.connect(config.database_url)
-    return TokenLedgerQueries(conn)
+    return TokenLedgerQueries(_get_connection())
 
 
 @app.get("/health", response_model=HealthResponse)
