@@ -1,6 +1,6 @@
 """
 LLM Pricing Configuration
-Prices in USD per 1M tokens (updated January 2025)
+Prices in USD per 1M tokens (updated January 2026)
 """
 
 from dataclasses import dataclass
@@ -15,15 +15,21 @@ class ModelPricing:
     cached_input_price_per_1m: float | None = None  # For cached prompts
 
 
-# OpenAI Pricing (as of January 2025)
+# OpenAI Pricing (as of January 2026)
 OPENAI_PRICING: dict[str, ModelPricing] = {
+    # GPT-5 series
+    "gpt-5": ModelPricing(1.25, 10.00, 0.13),
+    "gpt-5-mini": ModelPricing(0.25, 2.00, 0.025),
+    # GPT-4.1 series
+    "gpt-4.1": ModelPricing(2.00, 8.00),
+    "gpt-4.1-mini": ModelPricing(0.40, 1.60),
     # GPT-4o series
-    "gpt-4o": ModelPricing(2.50, 10.00),
-    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00),
-    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00),
+    "gpt-4o": ModelPricing(2.50, 10.00, 0.63),
+    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00, 0.63),
+    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00, 0.63),
     "gpt-4o-2024-05-13": ModelPricing(5.00, 15.00),
-    "gpt-4o-mini": ModelPricing(0.15, 0.60),
-    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60),
+    "gpt-4o-mini": ModelPricing(0.15, 0.60, 0.04),
+    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60, 0.04),
     # GPT-4 Turbo
     "gpt-4-turbo": ModelPricing(10.00, 30.00),
     "gpt-4-turbo-2024-04-09": ModelPricing(10.00, 30.00),
@@ -37,20 +43,30 @@ OPENAI_PRICING: dict[str, ModelPricing] = {
     "gpt-3.5-turbo-0125": ModelPricing(0.50, 1.50),
     "gpt-3.5-turbo-1106": ModelPricing(1.00, 2.00),
     "gpt-3.5-turbo-instruct": ModelPricing(1.50, 2.00),
-    # o1 reasoning models
+    # o-series reasoning models
     "o1": ModelPricing(15.00, 60.00),
     "o1-2024-12-17": ModelPricing(15.00, 60.00),
     "o1-preview": ModelPricing(15.00, 60.00),
     "o1-mini": ModelPricing(3.00, 12.00),
     "o1-mini-2024-09-12": ModelPricing(3.00, 12.00),
+    "o3": ModelPricing(2.00, 8.00),
+    "o4-mini": ModelPricing(1.10, 4.40),
     # Embeddings
     "text-embedding-3-small": ModelPricing(0.02, 0.0),
     "text-embedding-3-large": ModelPricing(0.13, 0.0),
     "text-embedding-ada-002": ModelPricing(0.10, 0.0),
 }
 
-# Anthropic Pricing (as of January 2025)
+# Anthropic Pricing (as of January 2026)
 ANTHROPIC_PRICING: dict[str, ModelPricing] = {
+    # Claude 4.5 series
+    "claude-opus-4-5-20251101": ModelPricing(5.00, 25.00, 0.50),
+    "claude-sonnet-4-5-20250929": ModelPricing(3.00, 15.00, 0.30),
+    "claude-haiku-4-5-20251001": ModelPricing(1.00, 5.00, 0.10),
+    # Claude 4 series
+    "claude-sonnet-4-20250514": ModelPricing(3.00, 15.00, 0.30),
+    "claude-opus-4-1-20250805": ModelPricing(15.00, 75.00, 1.50),
+    "claude-opus-4-20250514": ModelPricing(15.00, 75.00, 1.50),
     # Claude 3.5 series
     "claude-3-5-sonnet-20241022": ModelPricing(3.00, 15.00, 0.30),
     "claude-3-5-sonnet-20240620": ModelPricing(3.00, 15.00, 0.30),
@@ -59,28 +75,37 @@ ANTHROPIC_PRICING: dict[str, ModelPricing] = {
     "claude-3-opus-20240229": ModelPricing(15.00, 75.00, 1.50),
     "claude-3-sonnet-20240229": ModelPricing(3.00, 15.00, 0.30),
     "claude-3-haiku-20240307": ModelPricing(0.25, 1.25, 0.03),
-    # Claude 4 series (anticipated)
-    "claude-sonnet-4-20250514": ModelPricing(3.00, 15.00, 0.30),
-    "claude-opus-4-20250514": ModelPricing(15.00, 75.00, 1.50),
     # Aliases
+    "claude-opus-4-5-latest": ModelPricing(5.00, 25.00, 0.50),
+    "claude-sonnet-4-5-latest": ModelPricing(3.00, 15.00, 0.30),
+    "claude-haiku-4-5-latest": ModelPricing(1.00, 5.00, 0.10),
     "claude-3-5-sonnet-latest": ModelPricing(3.00, 15.00, 0.30),
     "claude-3-5-haiku-latest": ModelPricing(0.80, 4.00, 0.08),
     "claude-3-opus-latest": ModelPricing(15.00, 75.00, 1.50),
 }
 
-# Google/Gemini Pricing (for future support)
+# Google/Gemini Pricing (as of January 2026)
 GOOGLE_PRICING: dict[str, ModelPricing] = {
-    "gemini-1.5-pro": ModelPricing(1.25, 5.00),
-    "gemini-1.5-flash": ModelPricing(0.075, 0.30),
-    "gemini-1.0-pro": ModelPricing(0.50, 1.50),
+    # Gemini 3 series
+    "gemini-3-pro-preview": ModelPricing(2.00, 12.00, 0.20),
+    # Gemini 2.5 series
+    "gemini-2.5-pro": ModelPricing(1.25, 10.00, 0.125),
+    "gemini-2.5-flash": ModelPricing(0.30, 2.50, 0.03),
+    "gemini-2.5-flash-lite": ModelPricing(0.10, 0.40, 0.01),
+    # Gemini 2.0 series
+    "gemini-2.0-flash": ModelPricing(0.10, 0.40, 0.025),
+    # Legacy models (deprecated - kept for historical cost calculations)
+    "gemini-1.5-pro": ModelPricing(1.25, 5.00),  # Deprecated
+    "gemini-1.5-flash": ModelPricing(0.075, 0.30),  # Deprecated
+    "gemini-1.0-pro": ModelPricing(0.50, 1.50),  # Deprecated
 }
 
-# Mistral Pricing
+# Mistral Pricing (as of January 2026)
 MISTRAL_PRICING: dict[str, ModelPricing] = {
-    "mistral-large-latest": ModelPricing(2.00, 6.00),
-    "mistral-medium-latest": ModelPricing(2.70, 8.10),
-    "mistral-small-latest": ModelPricing(0.20, 0.60),
-    "open-mistral-7b": ModelPricing(0.25, 0.25),
+    "mistral-large-latest": ModelPricing(0.50, 1.50),
+    "mistral-medium-latest": ModelPricing(0.40, 2.00),
+    "mistral-small-latest": ModelPricing(0.06, 0.18),
+    "open-mistral-7b": ModelPricing(0.15, 0.15),  # Ministral 8B equivalent
     "open-mixtral-8x7b": ModelPricing(0.70, 0.70),
 }
 
@@ -98,7 +123,13 @@ def get_pricing(model: str, provider: str = "auto") -> ModelPricing | None:
     """
     if provider == "auto":
         # Try to detect provider from model name
-        if model.startswith("gpt-") or model.startswith("o1") or model.startswith("text-embedding"):
+        if (
+            model.startswith("gpt-")
+            or model.startswith("o1")
+            or model.startswith("o3")
+            or model.startswith("o4")
+            or model.startswith("text-embedding")
+        ):
             provider = "openai"
         elif model.startswith("claude"):
             provider = "anthropic"
