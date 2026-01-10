@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tokenledger
+      POSTGRES_PASSWORD: tokenledger
+      POSTGRES_DB: tokenledger
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tokenledger"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # TokenLedger API server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8765:8765"
+    environment:
+      - TOKENLEDGER_DATABASE_URL=postgresql://tokenledger:tokenledger@postgres:5432/tokenledger
+      - TOKENLEDGER_DEBUG=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: python -m tokenledger.server
+
+  # Dashboard (for development)
+  dashboard:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./dashboard:/app
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8765/api/v1
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
