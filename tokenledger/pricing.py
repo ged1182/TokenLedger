@@ -1,6 +1,6 @@
 """
 LLM Pricing Configuration
-Prices in USD per 1M tokens (updated January 2025)
+Prices in USD per 1M tokens (updated January 2026)
 """
 
 from dataclasses import dataclass
@@ -15,15 +15,15 @@ class ModelPricing:
     cached_input_price_per_1m: float | None = None  # For cached prompts
 
 
-# OpenAI Pricing (as of January 2025)
+# OpenAI Pricing (as of January 2026)
 OPENAI_PRICING: dict[str, ModelPricing] = {
     # GPT-4o series
-    "gpt-4o": ModelPricing(2.50, 10.00),
-    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00),
-    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00),
+    "gpt-4o": ModelPricing(2.50, 10.00, 1.25),
+    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00, 1.25),
+    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00, 1.25),
     "gpt-4o-2024-05-13": ModelPricing(5.00, 15.00),
-    "gpt-4o-mini": ModelPricing(0.15, 0.60),
-    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60),
+    "gpt-4o-mini": ModelPricing(0.15, 0.60, 0.075),
+    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60, 0.075),
     # GPT-4 Turbo
     "gpt-4-turbo": ModelPricing(10.00, 30.00),
     "gpt-4-turbo-2024-04-09": ModelPricing(10.00, 30.00),
@@ -49,7 +49,7 @@ OPENAI_PRICING: dict[str, ModelPricing] = {
     "text-embedding-ada-002": ModelPricing(0.10, 0.0),
 }
 
-# Anthropic Pricing (as of January 2025)
+# Anthropic Pricing (as of January 2026)
 ANTHROPIC_PRICING: dict[str, ModelPricing] = {
     # Claude 3.5 series
     "claude-3-5-sonnet-20241022": ModelPricing(3.00, 15.00, 0.30),
@@ -68,14 +68,16 @@ ANTHROPIC_PRICING: dict[str, ModelPricing] = {
     "claude-3-opus-latest": ModelPricing(15.00, 75.00, 1.50),
 }
 
-# Google/Gemini Pricing (for future support)
+# Google/Gemini Pricing (as of January 2026)
+# Note: Gemini 1.0 and 1.5 models were retired in late 2025
+# Pricing kept for historical cost calculations
 GOOGLE_PRICING: dict[str, ModelPricing] = {
-    "gemini-1.5-pro": ModelPricing(1.25, 5.00),
-    "gemini-1.5-flash": ModelPricing(0.075, 0.30),
-    "gemini-1.0-pro": ModelPricing(0.50, 1.50),
+    "gemini-1.5-pro": ModelPricing(1.25, 5.00),  # Deprecated
+    "gemini-1.5-flash": ModelPricing(0.075, 0.30),  # Deprecated
+    "gemini-1.0-pro": ModelPricing(0.50, 1.50),  # Deprecated
 }
 
-# Mistral Pricing
+# Mistral Pricing (as of January 2026)
 MISTRAL_PRICING: dict[str, ModelPricing] = {
     "mistral-large-latest": ModelPricing(2.00, 6.00),
     "mistral-medium-latest": ModelPricing(2.70, 8.10),
