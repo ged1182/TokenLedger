@@ -165,7 +165,7 @@ def track_cost(
 
 def _detect_provider(model: str) -> str:
     """Detect provider from model name"""
-    if model.startswith("gpt-") or model.startswith("o1"):
+    if model.startswith("gpt-") or model.startswith("o1") or model.startswith("text-embedding"):
         return "openai"
     elif model.startswith("claude"):
         return "anthropic"

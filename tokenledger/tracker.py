@@ -107,6 +107,7 @@ class TokenTracker:
         self._flush_thread: threading.Thread | None = None
         self._running = False
         self._initialized = False
+        self._use_psycopg2 = False  # Track which driver is being used
 
         # Context for tracking
         self._context = threading.local()
@@ -120,11 +121,13 @@ class TokenTracker:
 
                 self._connection = psycopg2.connect(self.config.database_url)
                 self._execute_values = execute_values
+                self._use_psycopg2 = True
             except ImportError:
                 try:
                     import psycopg
 
                     self._connection = psycopg.connect(self.config.database_url)
+                    self._use_psycopg2 = False
                 except ImportError as err:
                     raise ImportError(
                         "No PostgreSQL driver found. Install psycopg2 or psycopg: "
@@ -338,16 +341,27 @@ class TokenTracker:
             d = event.to_dict()
             values.append(tuple(d.get(col) for col in columns))
 
-        insert_sql = f"""
-            INSERT INTO {self.config.full_table_name}
-            ({", ".join(columns)})
-            VALUES %s
-            ON CONFLICT (event_id) DO NOTHING
-        """
-
         try:
             with conn.cursor() as cur:
-                self._execute_values(cur, insert_sql, values)
+                if self._use_psycopg2:
+                    # psycopg2: use execute_values for bulk insert
+                    insert_sql = f"""
+                        INSERT INTO {self.config.full_table_name}
+                        ({", ".join(columns)})
+                        VALUES %s
+                        ON CONFLICT (event_id) DO NOTHING
+                    """
+                    self._execute_values(cur, insert_sql, values)
+                else:
+                    # psycopg3: use executemany
+                    placeholders = ", ".join(["%s"] * len(columns))
+                    insert_sql = f"""
+                        INSERT INTO {self.config.full_table_name}
+                        ({", ".join(columns)})
+                        VALUES ({placeholders})
+                        ON CONFLICT (event_id) DO NOTHING
+                    """
+                    cur.executemany(insert_sql, values)
             conn.commit()
 
             if self.config.debug:
