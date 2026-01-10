@@ -416,6 +416,350 @@ class TokenLedgerQueries:
         return daily_avg * 30
 
 
+class AsyncTokenLedgerQueries:
+    """
+    Async pre-built analytics queries for TokenLedger data using asyncpg.
+
+    Example:
+        >>> from tokenledger.queries import AsyncTokenLedgerQueries
+        >>> from tokenledger.async_db import AsyncDatabase
+        >>>
+        >>> db = AsyncDatabase()
+        >>> await db.initialize()
+        >>> queries = AsyncTokenLedgerQueries(db)
+        >>> summary = await queries.get_cost_summary(days=30)
+        >>> print(f"Last 30 days: ${summary.total_cost:.2f}")
+    """
+
+    def __init__(self, db=None, table_name: str | None = None):
+        self._db = db
+        config = get_config()
+        self.table_name = table_name or config.full_table_name
+
+    async def _get_db(self):
+        if self._db is None:
+            from .async_db import get_async_db
+
+            self._db = await get_async_db()
+        return self._db
+
+    async def get_cost_summary(
+        self,
+        days: int = 30,
+        user_id: str | None = None,
+        model: str | None = None,
+        app_name: str | None = None,
+    ) -> CostSummary:
+        """
+        Get cost summary for a time period.
+
+        Args:
+            days: Number of days to look back
+            user_id: Filter by user
+            model: Filter by model
+            app_name: Filter by app
+
+        Returns:
+            CostSummary with totals and averages
+        """
+        db = await self._get_db()
+
+        where_clauses = [f"timestamp >= NOW() - INTERVAL '{days} days'"]
+        params: list[Any] = []
+        param_idx = 1
+
+        if user_id:
+            where_clauses.append(f"user_id = ${param_idx}")
+            params.append(user_id)
+            param_idx += 1
+        if model:
+            where_clauses.append(f"model = ${param_idx}")
+            params.append(model)
+            param_idx += 1
+        if app_name:
+            where_clauses.append(f"app_name = ${param_idx}")
+            params.append(app_name)
+            param_idx += 1
+
+        where_sql = " AND ".join(where_clauses)
+
+        sql = f"""
+            SELECT
+                COALESCE(SUM(cost_usd), 0) as total_cost,
+                COALESCE(SUM(total_tokens), 0) as total_tokens,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COUNT(*) as total_requests
+            FROM {self.table_name}
+            WHERE {where_sql}
+        """
+
+        row = await db.fetchrow(sql, *params)
+
+        total_cost = float(row[0] or 0)
+        total_tokens = int(row[1] or 0)
+        total_input = int(row[2] or 0)
+        total_output = int(row[3] or 0)
+        total_requests = int(row[4] or 0)
+
+        return CostSummary(
+            total_cost=total_cost,
+            total_tokens=total_tokens,
+            total_input_tokens=total_input,
+            total_output_tokens=total_output,
+            total_requests=total_requests,
+            avg_cost_per_request=total_cost / total_requests if total_requests > 0 else 0,
+            avg_tokens_per_request=total_tokens / total_requests if total_requests > 0 else 0,
+        )
+
+    async def get_costs_by_model(
+        self,
+        days: int = 30,
+        limit: int = 10,
+    ) -> list[ModelCost]:
+        """Get cost breakdown by model"""
+        db = await self._get_db()
+
+        sql = f"""
+            SELECT
+                model,
+                provider,
+                COALESCE(SUM(cost_usd), 0) as total_cost,
+                COUNT(*) as total_requests,
+                COALESCE(SUM(total_tokens), 0) as total_tokens
+            FROM {self.table_name}
+            WHERE timestamp >= NOW() - INTERVAL '{days} days'
+            GROUP BY model, provider
+            ORDER BY total_cost DESC
+            LIMIT $1
+        """
+
+        rows = await db.fetch(sql, limit)
+
+        results = []
+        for row in rows:
+            total_cost = float(row[2] or 0)
+            total_requests = int(row[3] or 0)
+            results.append(
+                ModelCost(
+                    model=row[0],
+                    provider=row[1],
+                    total_cost=total_cost,
+                    total_requests=total_requests,
+                    total_tokens=int(row[4] or 0),
+                    avg_cost_per_request=total_cost / total_requests if total_requests > 0 else 0,
+                )
+            )
+
+        return results
+
+    async def get_costs_by_user(
+        self,
+        days: int = 30,
+        limit: int = 20,
+    ) -> list[UserCost]:
+        """Get cost breakdown by user"""
+        db = await self._get_db()
+
+        sql = f"""
+            SELECT
+                COALESCE(user_id, 'anonymous') as user_id,
+                COALESCE(SUM(cost_usd), 0) as total_cost,
+                COUNT(*) as total_requests,
+                COALESCE(SUM(total_tokens), 0) as total_tokens
+            FROM {self.table_name}
+            WHERE timestamp >= NOW() - INTERVAL '{days} days'
+            GROUP BY user_id
+            ORDER BY total_cost DESC
+            LIMIT $1
+        """
+
+        rows = await db.fetch(sql, limit)
+
+        return [
+            UserCost(
+                user_id=row[0],
+                total_cost=float(row[1] or 0),
+                total_requests=int(row[2] or 0),
+                total_tokens=int(row[3] or 0),
+            )
+            for row in rows
+        ]
+
+    async def get_daily_costs(
+        self,
+        days: int = 30,
+        user_id: str | None = None,
+    ) -> list[DailyCost]:
+        """Get daily cost trends"""
+        db = await self._get_db()
+
+        where_clauses = [f"timestamp >= NOW() - INTERVAL '{days} days'"]
+        params: list[Any] = []
+        param_idx = 1
+
+        if user_id:
+            where_clauses.append(f"user_id = ${param_idx}")
+            params.append(user_id)
+            param_idx += 1
+
+        where_sql = " AND ".join(where_clauses)
+
+        sql = f"""
+            SELECT
+                DATE(timestamp) as date,
+                COALESCE(SUM(cost_usd), 0) as total_cost,
+                COUNT(*) as total_requests,
+                COALESCE(SUM(total_tokens), 0) as total_tokens
+            FROM {self.table_name}
+            WHERE {where_sql}
+            GROUP BY DATE(timestamp)
+            ORDER BY date ASC
+        """
+
+        rows = await db.fetch(sql, *params)
+
+        return [
+            DailyCost(
+                date=row[0],
+                total_cost=float(row[1] or 0),
+                total_requests=int(row[2] or 0),
+                total_tokens=int(row[3] or 0),
+            )
+            for row in rows
+        ]
+
+    async def get_hourly_costs(
+        self,
+        hours: int = 24,
+    ) -> list[HourlyCost]:
+        """Get hourly cost trends"""
+        db = await self._get_db()
+
+        sql = f"""
+            SELECT
+                DATE_TRUNC('hour', timestamp) as hour,
+                COALESCE(SUM(cost_usd), 0) as total_cost,
+                COUNT(*) as total_requests
+            FROM {self.table_name}
+            WHERE timestamp >= NOW() - INTERVAL '{hours} hours'
+            GROUP BY DATE_TRUNC('hour', timestamp)
+            ORDER BY hour ASC
+        """
+
+        rows = await db.fetch(sql)
+
+        return [
+            HourlyCost(
+                hour=row[0],
+                total_cost=float(row[1] or 0),
+                total_requests=int(row[2] or 0),
+            )
+            for row in rows
+        ]
+
+    async def get_error_rate(
+        self,
+        days: int = 7,
+    ) -> dict[str, Any]:
+        """Get error rate statistics"""
+        db = await self._get_db()
+
+        sql = f"""
+            SELECT
+                status,
+                COUNT(*) as count
+            FROM {self.table_name}
+            WHERE timestamp >= NOW() - INTERVAL '{days} days'
+            GROUP BY status
+        """
+
+        rows = await db.fetch(sql)
+
+        status_counts = {row[0]: row[1] for row in rows}
+        total = sum(status_counts.values())
+        errors = status_counts.get("error", 0)
+
+        return {
+            "total_requests": total,
+            "errors": errors,
+            "error_rate": errors / total if total > 0 else 0,
+            "status_breakdown": status_counts,
+        }
+
+    async def get_top_errors(
+        self,
+        days: int = 7,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Get most common errors"""
+        db = await self._get_db()
+
+        sql = f"""
+            SELECT
+                error_type,
+                error_message,
+                model,
+                COUNT(*) as count
+            FROM {self.table_name}
+            WHERE timestamp >= NOW() - INTERVAL '{days} days'
+              AND status = 'error'
+            GROUP BY error_type, error_message, model
+            ORDER BY count DESC
+            LIMIT $1
+        """
+
+        rows = await db.fetch(sql, limit)
+
+        return [
+            {
+                "error_type": row[0],
+                "error_message": row[1],
+                "model": row[2],
+                "count": row[3],
+            }
+            for row in rows
+        ]
+
+    async def get_latency_percentiles(
+        self,
+        days: int = 7,
+    ) -> dict[str, float]:
+        """Get latency percentiles"""
+        db = await self._get_db()
+
+        sql = f"""
+            SELECT
+                PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY duration_ms) as p50,
+                PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY duration_ms) as p90,
+                PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95,
+                PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms) as p99,
+                AVG(duration_ms) as avg
+            FROM {self.table_name}
+            WHERE timestamp >= NOW() - INTERVAL '{days} days'
+              AND duration_ms IS NOT NULL
+        """
+
+        row = await db.fetchrow(sql)
+
+        return {
+            "p50_ms": float(row[0] or 0),
+            "p90_ms": float(row[1] or 0),
+            "p95_ms": float(row[2] or 0),
+            "p99_ms": float(row[3] or 0),
+            "avg_ms": float(row[4] or 0),
+        }
+
+    async def get_projected_monthly_cost(
+        self,
+        based_on_days: int = 7,
+    ) -> float:
+        """Project monthly cost based on recent usage"""
+        summary = await self.get_cost_summary(days=based_on_days)
+        daily_avg = summary.total_cost / based_on_days if based_on_days > 0 else 0
+        return daily_avg * 30
+
+
 # Convenience function for raw SQL queries
 def execute_query(sql: str, params: list | None = None) -> list[tuple]:
     """
@@ -439,3 +783,20 @@ def execute_query(sql: str, params: list | None = None) -> list[tuple]:
             return cur.fetchall()
     finally:
         conn.close()
+
+
+async def execute_query_async(sql: str, params: list | None = None) -> list:
+    """
+    Execute a raw async SQL query against the TokenLedger table.
+
+    Args:
+        sql: SQL query (use $1, $2, etc. for parameters - asyncpg style)
+        params: Query parameters
+
+    Returns:
+        List of result records
+    """
+    from .async_db import get_async_db
+
+    db = await get_async_db()
+    return await db.fetch(sql, *(params or []))

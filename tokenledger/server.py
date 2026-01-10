@@ -1,8 +1,13 @@
 """
 TokenLedger Dashboard API
 FastAPI server providing analytics endpoints for the dashboard.
+
+Supports both sync (psycopg2) and async (asyncpg) database backends.
+Set TOKENLEDGER_USE_ASYNCPG=true to use asyncpg.
 """
 
+import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
@@ -10,13 +15,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .config import get_config
-from .queries import TokenLedgerQueries
+from .queries import AsyncTokenLedgerQueries, TokenLedgerQueries
 
-# Initialize FastAPI
+# Check if async mode is enabled
+USE_ASYNCPG = os.getenv("TOKENLEDGER_USE_ASYNCPG", "").lower() in ("1", "true", "yes")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Application lifespan manager for async database initialization."""
+    if USE_ASYNCPG:
+        from .async_db import close_async_db, init_async_db
+
+        # Initialize async database pool
+        await init_async_db(create_tables=False)
+
+    yield
+
+    if USE_ASYNCPG:
+        from .async_db import close_async_db
+
+        await close_async_db()
+
+
+# Initialize FastAPI with lifespan
 app = FastAPI(
     title="TokenLedger API",
     description="LLM Cost Analytics API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Add CORS middleware for dashboard
@@ -92,12 +119,15 @@ class HealthResponse(BaseModel):
     version: str
 
 
-# Module-level connection for reuse
+# Module-level connection for reuse (sync mode only)
 _connection = None
+
+# Module-level async queries instance
+_async_queries: AsyncTokenLedgerQueries | None = None
 
 
 def _get_connection():
-    """Get or create a reusable database connection"""
+    """Get or create a reusable database connection (sync mode)"""
     global _connection
     if _connection is None:
         import psycopg2
@@ -108,23 +138,39 @@ def _get_connection():
 
 
 def get_queries() -> TokenLedgerQueries:
-    """Get queries instance with database connection"""
+    """Get sync queries instance with database connection"""
     return TokenLedgerQueries(_get_connection())
+
+
+async def get_async_queries() -> AsyncTokenLedgerQueries:
+    """Get async queries instance with database pool"""
+    global _async_queries
+    if _async_queries is None:
+        from .async_db import get_async_db
+
+        db = await get_async_db()
+        _async_queries = AsyncTokenLedgerQueries(db)
+    return _async_queries
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint"""
     try:
-        queries = get_queries()
-        # Simple query to test connection
-        queries.get_cost_summary(days=1)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            await async_queries.get_cost_summary(days=1)
+        else:
+            sync_queries = get_queries()
+            sync_queries.get_cost_summary(days=1)
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {e!s}"
 
     return HealthResponse(
-        status="ok" if db_status == "connected" else "degraded", database=db_status, version="0.1.0"
+        status="ok" if db_status == "connected" else "degraded",
+        database=db_status,
+        version="0.1.0",
     )
 
 
@@ -137,14 +183,24 @@ async def get_summary(
 ):
     """Get cost summary for a time period"""
     try:
-        queries = get_queries()
-        summary = queries.get_cost_summary(
-            days=days,
-            user_id=user_id,
-            model=model,
-            app_name=app_name,
-        )
-        projected = queries.get_projected_monthly_cost(based_on_days=min(days, 7))
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            summary = await async_queries.get_cost_summary(
+                days=days,
+                user_id=user_id,
+                model=model,
+                app_name=app_name,
+            )
+            projected = await async_queries.get_projected_monthly_cost(based_on_days=min(days, 7))
+        else:
+            sync_queries = get_queries()
+            summary = sync_queries.get_cost_summary(
+                days=days,
+                user_id=user_id,
+                model=model,
+                app_name=app_name,
+            )
+            projected = sync_queries.get_projected_monthly_cost(based_on_days=min(days, 7))
 
         return CostSummaryResponse(
             total_cost=summary.total_cost,
@@ -167,8 +223,12 @@ async def get_costs_by_model(
 ):
     """Get cost breakdown by model"""
     try:
-        queries = get_queries()
-        models = queries.get_costs_by_model(days=days, limit=limit)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            models = await async_queries.get_costs_by_model(days=days, limit=limit)
+        else:
+            sync_queries = get_queries()
+            models = sync_queries.get_costs_by_model(days=days, limit=limit)
 
         # Calculate total for percentages
         total_cost = sum(m.total_cost for m in models)
@@ -196,8 +256,12 @@ async def get_costs_by_user(
 ):
     """Get cost breakdown by user"""
     try:
-        queries = get_queries()
-        users = queries.get_costs_by_user(days=days, limit=limit)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            users = await async_queries.get_costs_by_user(days=days, limit=limit)
+        else:
+            sync_queries = get_queries()
+            users = sync_queries.get_costs_by_user(days=days, limit=limit)
 
         return [
             UserCostResponse(
@@ -219,8 +283,12 @@ async def get_daily_costs(
 ):
     """Get daily cost trends"""
     try:
-        queries = get_queries()
-        daily = queries.get_daily_costs(days=days, user_id=user_id)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            daily = await async_queries.get_daily_costs(days=days, user_id=user_id)
+        else:
+            sync_queries = get_queries()
+            daily = sync_queries.get_daily_costs(days=days, user_id=user_id)
 
         return [
             DailyCostResponse(
@@ -241,8 +309,12 @@ async def get_hourly_costs(
 ):
     """Get hourly cost trends"""
     try:
-        queries = get_queries()
-        hourly = queries.get_hourly_costs(hours=hours)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            hourly = await async_queries.get_hourly_costs(hours=hours)
+        else:
+            sync_queries = get_queries()
+            hourly = sync_queries.get_hourly_costs(hours=hours)
 
         return [
             HourlyCostResponse(
@@ -262,8 +334,12 @@ async def get_error_stats(
 ):
     """Get error rate statistics"""
     try:
-        queries = get_queries()
-        stats = queries.get_error_rate(days=days)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            stats = await async_queries.get_error_rate(days=days)
+        else:
+            sync_queries = get_queries()
+            stats = sync_queries.get_error_rate(days=days)
 
         return ErrorStatsResponse(**stats)
     except Exception as e:
@@ -277,8 +353,12 @@ async def get_top_errors(
 ):
     """Get most common errors"""
     try:
-        queries = get_queries()
-        return queries.get_top_errors(days=days, limit=limit)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            return await async_queries.get_top_errors(days=days, limit=limit)
+        else:
+            sync_queries = get_queries()
+            return sync_queries.get_top_errors(days=days, limit=limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -289,8 +369,12 @@ async def get_latency_stats(
 ):
     """Get latency percentiles"""
     try:
-        queries = get_queries()
-        stats = queries.get_latency_percentiles(days=days)
+        if USE_ASYNCPG:
+            async_queries = await get_async_queries()
+            stats = await async_queries.get_latency_percentiles(days=days)
+        else:
+            sync_queries = get_queries()
+            stats = sync_queries.get_latency_percentiles(days=days)
 
         return LatencyResponse(**stats)
     except Exception as e:

@@ -23,9 +23,13 @@ class TokenLedgerConfig:
     batch_size: int = 100
     flush_interval_seconds: float = 5.0
 
-    # Async configuration
+    # Async configuration (for sync tracker with background thread)
     async_mode: bool = True
     max_queue_size: int = 10000
+
+    # Asyncpg pool configuration
+    pool_min_size: int = 2
+    pool_max_size: int = 10
 
     # Sampling (for high-volume apps)
     sample_rate: float = 1.0  # 1.0 = log everything, 0.1 = log 10%
@@ -55,6 +59,12 @@ class TokenLedgerConfig:
 
         if os.getenv("TOKENLEDGER_DEBUG"):
             self.debug = os.getenv("TOKENLEDGER_DEBUG", "").lower() in ("1", "true", "yes")
+
+        # Pool configuration from environment
+        if os.getenv("TOKENLEDGER_POOL_MIN_SIZE"):
+            self.pool_min_size = int(os.getenv("TOKENLEDGER_POOL_MIN_SIZE", "2"))
+        if os.getenv("TOKENLEDGER_POOL_MAX_SIZE"):
+            self.pool_max_size = int(os.getenv("TOKENLEDGER_POOL_MAX_SIZE", "10"))
 
     @property
     def is_supabase(self) -> bool:
