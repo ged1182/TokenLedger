@@ -40,15 +40,22 @@ dependencies = []
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9.0"]
+asyncpg = ["asyncpg>=0.29.0"]
 server = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "psycopg2-binary>=2.9.0",
 ]
+server-async = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "asyncpg>=0.29.0",
+]
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 all = [
     "psycopg2-binary>=2.9.0",
+    "asyncpg>=0.29.0",
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "openai>=1.0.0",
@@ -159,6 +166,7 @@ disallow_incomplete_defs = false
 module = [
     "psycopg2.*",
     "psycopg.*",
+    "asyncpg.*",
     "uvicorn.*",
     "flask.*",
 ]

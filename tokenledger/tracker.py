@@ -403,8 +403,156 @@ class TokenTracker:
             self._connection = None
 
 
+class AsyncTokenTracker:
+    """
+    Async tracker class for logging LLM events to PostgreSQL using asyncpg.
+    Supports connection pooling and true async operations.
+
+    Example:
+        >>> from tokenledger import AsyncTokenTracker, LLMEvent
+        >>>
+        >>> tracker = AsyncTokenTracker()
+        >>> await tracker.initialize()
+        >>>
+        >>> event = LLMEvent(provider="openai", model="gpt-4", input_tokens=100)
+        >>> await tracker.track(event)
+        >>> await tracker.flush()
+        >>> await tracker.shutdown()
+    """
+
+    def __init__(self, config: TokenLedgerConfig | None = None):
+        self.config = config or get_config()
+        self._db: Any = None
+        self._batch: list[LLMEvent] = []
+        self._lock: Any = None  # asyncio.Lock, set on first use
+        self._initialized = False
+
+        # Context for tracking
+        self._context_var = None  # Will be initialized on first use
+
+    async def _get_lock(self):
+        """Get or create the async lock (lazy initialization for event loop safety)."""
+        if self._lock is None:
+            import asyncio
+
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    async def _get_db(self):
+        """Get or create the async database instance."""
+        if self._db is None:
+            from .async_db import AsyncDatabase
+
+            self._db = AsyncDatabase(self.config)
+        return self._db
+
+    async def initialize(
+        self,
+        create_tables: bool = True,
+        min_pool_size: int = 2,
+        max_pool_size: int = 10,
+    ) -> None:
+        """
+        Initialize the async tracker.
+
+        Args:
+            create_tables: Whether to create the events table if it doesn't exist
+            min_pool_size: Minimum number of connections in the pool
+            max_pool_size: Maximum number of connections in the pool
+        """
+        if self._initialized:
+            return
+
+        db = await self._get_db()
+        await db.initialize(
+            min_size=min_pool_size,
+            max_size=max_pool_size,
+            create_tables=create_tables,
+        )
+
+        self._initialized = True
+
+        if self.config.debug:
+            logger.info("AsyncTokenTracker initialized")
+
+    async def track(self, event: LLMEvent) -> None:
+        """
+        Track an LLM event asynchronously.
+
+        Args:
+            event: The LLMEvent to track
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        # Apply sampling
+        if self.config.sample_rate < 1.0:
+            if random.random() > self.config.sample_rate:
+                return
+
+        # Add default metadata
+        if self.config.default_metadata:
+            event.metadata = {**self.config.default_metadata, **event.metadata}
+
+        # Add app info
+        if not event.app_name:
+            event.app_name = self.config.app_name
+        if not event.environment:
+            event.environment = self.config.environment
+
+        lock = await self._get_lock()
+        async with lock:
+            self._batch.append(event)
+            if len(self._batch) >= self.config.batch_size:
+                await self._flush_batch()
+
+    async def _flush_batch(self) -> int:
+        """Flush the current batch to the database (internal, assumes lock is held)."""
+        if not self._batch:
+            return 0
+
+        events_to_flush = self._batch
+        self._batch = []
+
+        return await self._write_batch(events_to_flush)
+
+    async def _write_batch(self, events: list[LLMEvent]) -> int:
+        """Write a batch of events to the database."""
+        if not events:
+            return 0
+
+        db = await self._get_db()
+        event_dicts = [event.to_dict() for event in events]
+        return await db.insert_events(event_dicts)
+
+    async def flush(self) -> int:
+        """
+        Flush all pending events to the database.
+
+        Returns:
+            Number of events flushed
+        """
+        lock = await self._get_lock()
+        async with lock:
+            return await self._flush_batch()
+
+    async def shutdown(self) -> None:
+        """Shutdown the async tracker, flushing any pending events."""
+        await self.flush()
+
+        if self._db:
+            await self._db.close()
+            self._db = None
+
+        self._initialized = False
+
+        if self.config.debug:
+            logger.info("AsyncTokenTracker shutdown complete")
+
+
 # Global tracker instance
 _tracker: TokenTracker | None = None
+_async_tracker: AsyncTokenTracker | None = None
 
 
 def get_tracker() -> TokenTracker:
@@ -415,6 +563,20 @@ def get_tracker() -> TokenTracker:
     return _tracker
 
 
+async def get_async_tracker() -> AsyncTokenTracker:
+    """Get or create the global async tracker instance"""
+    global _async_tracker
+    if _async_tracker is None:
+        _async_tracker = AsyncTokenTracker()
+    return _async_tracker
+
+
 def track_event(event: LLMEvent) -> None:
     """Track an event using the global tracker"""
     get_tracker().track(event)
+
+
+async def track_event_async(event: LLMEvent) -> None:
+    """Track an event using the global async tracker"""
+    tracker = await get_async_tracker()
+    await tracker.track(event)
