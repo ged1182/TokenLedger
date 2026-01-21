@@ -140,9 +140,7 @@ class AsyncDatabase:
                 await conn.fetch("SELECT * FROM table")
         """
         if not self._initialized or self._pool is None:
-            raise RuntimeError(
-                "Database not initialized. Call await db.initialize() first."
-            )
+            raise RuntimeError("Database not initialized. Call await db.initialize() first.")
 
         async with self._pool.acquire() as conn:
             yield conn
@@ -231,7 +229,7 @@ class AsyncDatabase:
             values.append(tuple(row))
 
         # Build parameterized query with $1, $2, etc.
-        placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
+        placeholders = ", ".join(f"${i + 1}" for i in range(len(columns)))
         insert_sql = f"""
             INSERT INTO {self.config.full_table_name}
             ({", ".join(columns)})

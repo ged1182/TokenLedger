@@ -373,9 +373,7 @@ def patch_anthropic(
     try:
         import anthropic  # noqa: F401
     except ImportError as err:
-        raise ImportError(
-            "Anthropic SDK not installed. Run: pip install anthropic"
-        ) from err
+        raise ImportError("Anthropic SDK not installed. Run: pip install anthropic") from err
 
     if client is not None:
         # Patch specific client instance

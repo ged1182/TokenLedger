@@ -3,7 +3,7 @@
 **Know exactly what your AI features cost, per user, per endpoint, per day.**
 
 [![License: ELv2](https://img.shields.io/badge/License-Elastic%202.0-blue.svg)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 <p align="center">
   <img src="docs/dashboard-preview.png" alt="TokenLedger Dashboard" width="800"/>

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tokenledger"
-version = "0.1.0"
+dynamic = ["version"]
 description = "LLM Cost Analytics for Postgres - Know exactly what your AI features cost"
 readme = "README.md"
 license = { text = "Elastic-2.0" }
@@ -75,6 +75,7 @@ Homepage = "https://github.com/ged1182/tokenledger"
 Documentation = "https://github.com/ged1182/tokenledger#readme"
 Repository = "https://github.com/ged1182/tokenledger"
 Issues = "https://github.com/ged1182/tokenledger/issues"
+Changelog = "https://github.com/ged1182/tokenledger/blob/main/CHANGELOG.md"
 
 [project.scripts]
 tokenledger = "tokenledger.server:run_server"
@@ -83,7 +84,10 @@ tokenledger = "tokenledger.server:run_server"
 packages = ["tokenledger"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/tokenledger", "/README.md", "/LICENSE"]
+include = ["/tokenledger", "/README.md", "/LICENSE", "/migrations", "/CHANGELOG.md"]
+
+[tool.hatch.version]
+path = "tokenledger/__init__.py"
 
 # =============================================================================
 # Ruff Configuration
