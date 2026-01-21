@@ -8,8 +8,8 @@ dynamic = ["version"]
 description = "LLM Cost Analytics for Postgres - Know exactly what your AI features cost"
 readme = "README.md"
 license = { text = "Elastic-2.0" }
-authors = [{ name = "George Ionita", email = "george@example.com" }]
-maintainers = [{ name = "George Ionita", email = "george@example.com" }]
+authors = [{ name = "George Dekermenjian", email = "ged118@gmail.com" }]
+maintainers = [{ name = "George Dekermenjian", email = "ged118@gmail.com" }]
 keywords = [
     "llm",
     "openai",

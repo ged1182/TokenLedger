@@ -2,6 +2,9 @@
 
 **Know exactly what your AI features cost, per user, per endpoint, per day.**
 
+[![CI](https://github.com/ged1182/tokenledger/actions/workflows/ci.yml/badge.svg)](https://github.com/ged1182/tokenledger/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/ged1182/tokenledger/branch/main/graph/badge.svg)](https://codecov.io/gh/ged1182/tokenledger)
+[![PyPI version](https://badge.fury.io/py/tokenledger.svg)](https://badge.fury.io/py/tokenledger)
 [![License: ELv2](https://img.shields.io/badge/License-Elastic%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
