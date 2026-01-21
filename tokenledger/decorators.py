@@ -3,8 +3,8 @@ TokenLedger Decorators
 Easy-to-use decorators for tracking LLM calls.
 """
 
-import asyncio
 import functools
+import inspect
 import time
 from collections.abc import Callable
 from typing import Any
@@ -45,7 +45,7 @@ def track_llm(
     """
 
     def decorator(func: Callable) -> Callable:
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):

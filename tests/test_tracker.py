@@ -454,3 +454,173 @@ class TestGlobalTrackers:
             await track_event_async(event)
 
             mock_tracker.track.assert_called_once_with(event)
+
+
+class TestTokenTrackerWithBackend:
+    """Tests for TokenTracker with backend abstraction."""
+
+    def test_tracker_with_use_backend_flag(self) -> None:
+        """Test that use_backend flag is set correctly."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+
+        tracker = TokenTracker(config=config, use_backend=True)
+
+        assert tracker._use_backend is True
+        assert tracker._backend is None  # Backend created on initialize
+
+    def test_tracker_with_custom_backend(self) -> None:
+        """Test that a custom backend can be provided."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+
+        mock_backend = MagicMock()
+        tracker = TokenTracker(config=config, backend=mock_backend)
+
+        assert tracker._use_backend is True
+        assert tracker._backend is mock_backend
+
+    def test_initialize_with_backend(self) -> None:
+        """Test that initialize creates and initializes the backend."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+
+        mock_backend = MagicMock()
+        mock_backend.is_initialized = True
+
+        tracker = TokenTracker(config=config, backend=mock_backend)
+        tracker.initialize()
+
+        mock_backend.initialize.assert_called_once_with(config, create_schema=True)
+
+    def test_write_batch_uses_backend(self) -> None:
+        """Test that _write_batch uses the backend when enabled."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+
+        mock_backend = MagicMock()
+        mock_backend.is_initialized = True
+        mock_backend.write_events.return_value = 2
+
+        tracker = TokenTracker(config=config, backend=mock_backend)
+        tracker._initialized = True
+
+        events = [
+            LLMEvent(provider="openai", model="gpt-4o"),
+            LLMEvent(provider="anthropic", model="claude-3"),
+        ]
+
+        result = tracker._write_batch(events)
+
+        assert result == 2
+        mock_backend.write_events.assert_called_once()
+        # Verify events were converted to dicts
+        call_args = mock_backend.write_events.call_args[0][0]
+        assert len(call_args) == 2
+        assert all(isinstance(e, dict) for e in call_args)
+
+    def test_shutdown_closes_backend(self) -> None:
+        """Test that shutdown closes the backend."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+
+        mock_backend = MagicMock()
+        tracker = TokenTracker(config=config, backend=mock_backend)
+        tracker._initialized = True
+
+        tracker.shutdown()
+
+        mock_backend.close.assert_called_once()
+        assert tracker._backend is None
+
+
+class TestAsyncTokenTrackerWithBackend:
+    """Tests for AsyncTokenTracker with backend abstraction."""
+
+    def test_async_tracker_with_use_backend_flag(self) -> None:
+        """Test that use_backend flag is set correctly."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+
+        tracker = AsyncTokenTracker(config=config, use_backend=True)
+
+        assert tracker._use_backend is True
+        assert tracker._backend is None  # Backend created on initialize
+
+    def test_async_tracker_with_custom_backend(self) -> None:
+        """Test that a custom backend can be provided."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+
+        mock_backend = AsyncMock()
+        tracker = AsyncTokenTracker(config=config, backend=mock_backend)
+
+        assert tracker._use_backend is True
+        assert tracker._backend is mock_backend
+
+    @pytest.mark.asyncio
+    async def test_async_initialize_with_backend(self) -> None:
+        """Test that initialize creates and initializes the backend."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+
+        mock_backend = AsyncMock()
+        mock_backend.is_initialized = True
+
+        tracker = AsyncTokenTracker(config=config, backend=mock_backend)
+        await tracker.initialize()
+
+        mock_backend.initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_write_batch_uses_backend(self) -> None:
+        """Test that _write_batch uses the backend when enabled."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+
+        mock_backend = AsyncMock()
+        mock_backend.is_initialized = True
+        mock_backend.write_events.return_value = 2
+
+        tracker = AsyncTokenTracker(config=config, backend=mock_backend)
+        tracker._initialized = True
+
+        events = [
+            LLMEvent(provider="openai", model="gpt-4o"),
+            LLMEvent(provider="anthropic", model="claude-3"),
+        ]
+
+        result = await tracker._write_batch(events)
+
+        assert result == 2
+        mock_backend.write_events.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_shutdown_closes_backend(self) -> None:
+        """Test that shutdown closes the backend."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+
+        mock_backend = AsyncMock()
+        tracker = AsyncTokenTracker(config=config, backend=mock_backend)
+        tracker._initialized = True
+
+        await tracker.shutdown()
+
+        mock_backend.close.assert_called_once()
+        assert tracker._backend is None
