@@ -7,11 +7,11 @@ import pytest
 from tokenledger.backends.postgresql.schema import (
     get_create_indexes_sql,
     get_create_table_sql,
-    get_full_schema_sql,
     get_health_check_sql,
     get_insert_sql_asyncpg,
     get_insert_sql_psycopg2,
     get_insert_sql_psycopg3,
+    get_schema_statements,
 )
 from tokenledger.config import TokenLedgerConfig
 
@@ -83,44 +83,71 @@ class TestGetCreateTableSql:
 class TestGetCreateIndexesSql:
     """Tests for get_create_indexes_sql function."""
 
-    def test_contains_create_index(self, config: TokenLedgerConfig) -> None:
-        """Test that SQL contains CREATE INDEX."""
-        sql = get_create_indexes_sql(config)
-        assert "CREATE INDEX IF NOT EXISTS" in sql
+    def test_returns_list(self, config: TokenLedgerConfig) -> None:
+        """Test that function returns a list of SQL statements."""
+        indexes = get_create_indexes_sql(config)
+        assert isinstance(indexes, list)
+        assert len(indexes) == 4  # 4 indexes
+
+    def test_each_contains_create_index(self, config: TokenLedgerConfig) -> None:
+        """Test that each SQL contains CREATE INDEX."""
+        indexes = get_create_indexes_sql(config)
+        for sql in indexes:
+            assert "CREATE INDEX IF NOT EXISTS" in sql
 
     def test_contains_timestamp_index(self, config: TokenLedgerConfig) -> None:
         """Test that timestamp index is created."""
-        sql = get_create_indexes_sql(config)
+        indexes = get_create_indexes_sql(config)
+        sql = " ".join(indexes)
         assert f"idx_{config.table_name}_timestamp" in sql
         assert "timestamp DESC" in sql
 
     def test_contains_user_index(self, config: TokenLedgerConfig) -> None:
         """Test that user index is created."""
-        sql = get_create_indexes_sql(config)
+        indexes = get_create_indexes_sql(config)
+        sql = " ".join(indexes)
         assert f"idx_{config.table_name}_user" in sql
         assert "user_id" in sql
 
     def test_contains_model_index(self, config: TokenLedgerConfig) -> None:
         """Test that model index is created."""
-        sql = get_create_indexes_sql(config)
+        indexes = get_create_indexes_sql(config)
+        sql = " ".join(indexes)
         assert f"idx_{config.table_name}_model" in sql
 
     def test_contains_app_index(self, config: TokenLedgerConfig) -> None:
         """Test that app index is created."""
-        sql = get_create_indexes_sql(config)
+        indexes = get_create_indexes_sql(config)
+        sql = " ".join(indexes)
         assert f"idx_{config.table_name}_app" in sql
         assert "app_name" in sql
         assert "environment" in sql
 
 
-class TestGetFullSchemaSql:
-    """Tests for get_full_schema_sql function."""
+class TestGetSchemaStatements:
+    """Tests for get_schema_statements function."""
 
-    def test_contains_table_and_indexes(self, config: TokenLedgerConfig) -> None:
-        """Test that full schema contains both table and indexes."""
-        sql = get_full_schema_sql(config)
-        assert "CREATE TABLE IF NOT EXISTS" in sql
-        assert "CREATE INDEX IF NOT EXISTS" in sql
+    def test_returns_list(self, config: TokenLedgerConfig) -> None:
+        """Test that function returns a list."""
+        statements = get_schema_statements(config)
+        assert isinstance(statements, list)
+
+    def test_first_is_create_table(self, config: TokenLedgerConfig) -> None:
+        """Test that first statement is CREATE TABLE."""
+        statements = get_schema_statements(config)
+        assert "CREATE TABLE IF NOT EXISTS" in statements[0]
+
+    def test_contains_all_indexes(self, config: TokenLedgerConfig) -> None:
+        """Test that remaining statements are CREATE INDEX."""
+        statements = get_schema_statements(config)
+        # First is table, rest are indexes
+        for sql in statements[1:]:
+            assert "CREATE INDEX IF NOT EXISTS" in sql
+
+    def test_total_statement_count(self, config: TokenLedgerConfig) -> None:
+        """Test total number of statements (1 table + 4 indexes)."""
+        statements = get_schema_statements(config)
+        assert len(statements) == 5
 
 
 class TestGetInsertSqlPsycopg2:

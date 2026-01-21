@@ -15,10 +15,10 @@ from tokenledger.backends.exceptions import ConnectionError, DriverNotFoundError
 from tokenledger.backends.protocol import BackendCapabilities
 
 from .schema import (
-    get_full_schema_sql,
     get_health_check_sql,
     get_insert_sql_psycopg2,
     get_insert_sql_psycopg3,
+    get_schema_statements,
 )
 
 if TYPE_CHECKING:
@@ -125,10 +125,11 @@ class PostgreSQLBackend(BaseStorageBackend):
         if not self._config or not self._connection:
             return
 
-        sql = get_full_schema_sql(self._config)
+        statements = get_schema_statements(self._config)
 
         with self._connection.cursor() as cur:
-            cur.execute(sql)
+            for sql in statements:
+                cur.execute(sql)
         self._connection.commit()
 
         if self._config.debug:

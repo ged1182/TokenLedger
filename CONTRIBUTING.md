@@ -4,6 +4,26 @@ Thank you for your interest in contributing to TokenLedger! This document provid
 
 ## Development Setup
 
+### Quick Start (Recommended)
+
+```bash
+# Clone and enter the project
+git clone https://github.com/ged1182/tokenledger.git
+cd tokenledger
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# One-command setup: installs deps + starts test database
+make setup
+
+# Verify everything works
+make test-all
+```
+
+### Manual Setup
+
 1. **Clone the repository**
    ```bash
    git clone https://github.com/ged1182/tokenledger.git
@@ -21,14 +41,15 @@ Thank you for your interest in contributing to TokenLedger! This document provid
    pip install -e ".[all,dev]"
    ```
 
-4. **Install pre-commit hooks**
+4. **Install pre-commit hooks** (optional)
    ```bash
    pre-commit install
    ```
 
-5. **Start the development database**
+5. **Start the test database**
    ```bash
-   docker compose up -d postgres
+   make db-start
+   # Or manually: docker compose -f docker-compose.test.yml up -d
    ```
 
 ## Code Quality
@@ -68,24 +89,179 @@ pre-commit run --all-files
 
 ## Testing
 
+TokenLedger has two types of tests:
+- **Unit tests** - Fast, no external dependencies
+- **Integration tests** - Require PostgreSQL, test real database operations
+
+### Makefile Commands (Recommended)
+
+```bash
+make test              # Run unit tests only (fast, no database)
+make test-integration  # Run integration tests (starts database automatically)
+make test-all          # Run all tests
+make test-cov          # Run all tests with coverage report
+```
+
 ### Unit Tests
 
-Unit tests should not require a database connection:
+Unit tests run without any database and use mocks:
 
 ```bash
 pytest -m "not integration"
 ```
 
+These tests cover:
+- Configuration parsing
+- Event creation and validation
+- Pricing calculations
+- Protocol compliance
+- Mock database operations
+
 ### Integration Tests
 
-Integration tests require a running PostgreSQL database:
+Integration tests verify the complete workflow with a real PostgreSQL database.
 
+**Setup:**
 ```bash
-# Start the database
-docker compose up -d postgres
+# Start the test database (port 5433)
+make db-start
 
 # Run integration tests
-pytest -m integration
+make test-integration
+```
+
+**What's tested:**
+- `TokenTracker` with real database writes
+- `PostgreSQLBackend` and `AsyncPostgreSQLBackend`
+- Batch writing and flushing
+- Database views (daily costs, user costs)
+- Error handling and duplicate event handling
+
+**Database Configuration:**
+
+The test database runs on **port 5433** (not 5432) to avoid conflicts with any development database:
+
+| Setting | Value |
+|---------|-------|
+| Host | localhost |
+| Port | 5433 |
+| Database | tokenledger_test |
+| User | tokenledger |
+| Password | tokenledger |
+
+**Connection string:**
+```
+postgresql://tokenledger:tokenledger@localhost:5433/tokenledger_test
+```
+
+### Test Database Commands
+
+```bash
+make db-start   # Start PostgreSQL container
+make db-stop    # Stop PostgreSQL container
+make db-shell   # Open psql shell to test database
+make db-logs    # View container logs
+make db-reset   # Reset database (stop, remove volume, restart)
+```
+
+### Writing Integration Tests
+
+Use the `@pytest.mark.integration` decorator and `requires_postgres` marker:
+
+```python
+import pytest
+from tests.conftest import requires_postgres
+
+@pytest.mark.integration
+@requires_postgres
+class TestMyFeature:
+    def test_something(self, integration_config, clean_events_table):
+        # integration_config provides a TokenLedgerConfig
+        # clean_events_table truncates the table before/after each test
+        pass
+```
+
+Available fixtures:
+- `integration_config` - Sync `TokenLedgerConfig` pointing to test database
+- `async_integration_config` - Async `TokenLedgerConfig`
+- `integration_database_url` - Raw connection string
+- `clean_events_table` - Truncates events table before/after test
+
+### Skipped Tests
+
+Integration tests are automatically skipped if the database is unavailable:
+
+```
+SKIPPED [1] tests/integration/test_tracker.py - PostgreSQL not available
+         (run: docker compose -f docker-compose.test.yml up -d)
+```
+
+## Database Migrations
+
+TokenLedger uses [Alembic](https://alembic.sqlalchemy.org/) for PostgreSQL schema migrations.
+
+### Migration Commands
+
+```bash
+make migrate          # Apply all pending migrations
+make migrate-up       # Apply next migration only
+make migrate-down     # Rollback last migration
+make migrate-new msg="add new column"  # Create new migration
+make migrate-history  # Show migration history
+make migrate-sql      # Generate SQL without applying
+```
+
+### Creating a New Migration
+
+When you need to change the database schema:
+
+1. **Create the migration file**
+   ```bash
+   make migrate-new msg="add user preferences column"
+   ```
+
+2. **Edit the generated file** in `alembic/versions/`
+   ```python
+   def upgrade() -> None:
+       op.add_column('token_ledger_events',
+           sa.Column('preferences', postgresql.JSONB(), nullable=True)
+       )
+
+   def downgrade() -> None:
+       op.drop_column('token_ledger_events', 'preferences')
+   ```
+
+3. **Test the migration**
+   ```bash
+   make db-reset           # Fresh database
+   make migrate            # Apply migrations
+   make test-integration   # Run tests
+   ```
+
+4. **Verify rollback works**
+   ```bash
+   make migrate-down       # Rollback
+   make migrate            # Re-apply
+   ```
+
+### Migration Best Practices
+
+- **Always write `downgrade()`** - Every migration must be reversible
+- **Test on fresh database** - Use `make db-reset` before testing
+- **Keep migrations small** - One logical change per migration
+- **Don't modify old migrations** - Create new ones instead
+- **Use `op.execute()` for raw SQL** when needed (views, functions)
+
+### Environment Configuration
+
+Migrations read the database URL from:
+1. `TOKENLEDGER_DATABASE_URL` environment variable
+2. `DATABASE_URL` environment variable
+3. `sqlalchemy.url` in `alembic.ini` (not recommended for production)
+
+```bash
+# Example: Run migrations against production
+TOKENLEDGER_DATABASE_URL=postgresql://user:pass@host/db alembic upgrade head
 ```
 
 ## Pull Request Process

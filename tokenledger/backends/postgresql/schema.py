@@ -20,7 +20,7 @@ def get_create_table_sql(config: TokenLedgerConfig) -> str:
         config: TokenLedger configuration with table/schema names
 
     Returns:
-        SQL CREATE TABLE statement
+        SQL CREATE TABLE statement (single statement with semicolon)
     """
     return f"""
     CREATE TABLE IF NOT EXISTS {config.full_table_name} (
@@ -60,11 +60,11 @@ def get_create_table_sql(config: TokenLedgerConfig) -> str:
 
         request_preview TEXT,
         response_preview TEXT
-    )
+    );
     """
 
 
-def get_create_indexes_sql(config: TokenLedgerConfig) -> str:
+def get_create_indexes_sql(config: TokenLedgerConfig) -> list[str]:
     """
     Generate CREATE INDEX statements for common query patterns.
 
@@ -72,32 +72,33 @@ def get_create_indexes_sql(config: TokenLedgerConfig) -> str:
         config: TokenLedger configuration with table/schema names
 
     Returns:
-        SQL CREATE INDEX statements
+        List of individual CREATE INDEX statements
     """
-    return f"""
-    -- Indexes for common queries
-    CREATE INDEX IF NOT EXISTS idx_{config.table_name}_timestamp
-        ON {config.full_table_name} (timestamp DESC);
-    CREATE INDEX IF NOT EXISTS idx_{config.table_name}_user
-        ON {config.full_table_name} (user_id, timestamp DESC);
-    CREATE INDEX IF NOT EXISTS idx_{config.table_name}_model
-        ON {config.full_table_name} (model, timestamp DESC);
-    CREATE INDEX IF NOT EXISTS idx_{config.table_name}_app
-        ON {config.full_table_name} (app_name, environment, timestamp DESC);
-    """
+    return [
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_timestamp "
+        f"ON {config.full_table_name} (timestamp DESC);",
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_user "
+        f"ON {config.full_table_name} (user_id, timestamp DESC);",
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_model "
+        f"ON {config.full_table_name} (model, timestamp DESC);",
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_app "
+        f"ON {config.full_table_name} (app_name, environment, timestamp DESC);",
+    ]
 
 
-def get_full_schema_sql(config: TokenLedgerConfig) -> str:
+def get_schema_statements(config: TokenLedgerConfig) -> list[str]:
     """
-    Generate complete schema creation SQL (table + indexes).
+    Get all schema creation statements as a list.
+
+    Use this for drivers that don't support multiple statements in one execute.
 
     Args:
         config: TokenLedger configuration with table/schema names
 
     Returns:
-        Complete SQL for schema creation
+        List of SQL statements to execute sequentially
     """
-    return get_create_table_sql(config) + "\n" + get_create_indexes_sql(config)
+    return [get_create_table_sql(config), *get_create_indexes_sql(config)]
 
 
 def get_insert_sql_psycopg2(config: TokenLedgerConfig, columns: tuple[str, ...]) -> str:

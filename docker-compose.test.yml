@@ -1,0 +1,21 @@
+# Docker Compose for integration testing
+# Usage: docker compose -f docker-compose.test.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tokenledger
+      POSTGRES_PASSWORD: tokenledger
+      POSTGRES_DB: tokenledger_test
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts with dev database
+    volumes:
+      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tokenledger -d tokenledger_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data  # Use tmpfs for faster tests
