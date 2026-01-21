@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import uuid
+from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -10,6 +12,87 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from tokenledger.config import TokenLedgerConfig
+
+# Integration test database URL (uses port 5433 from docker-compose.test.yml)
+INTEGRATION_DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://tokenledger:tokenledger@localhost:5433/tokenledger_test",
+)
+
+
+def _is_postgres_available() -> bool:
+    """Check if PostgreSQL is available for integration tests."""
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(INTEGRATION_DATABASE_URL, connect_timeout=2)
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+# Skip integration tests if database is not available
+requires_postgres = pytest.mark.skipif(
+    not _is_postgres_available(),
+    reason="PostgreSQL not available (run: docker compose -f docker-compose.test.yml up -d)",
+)
+
+
+@pytest.fixture(scope="session")
+def integration_database_url() -> str:
+    """Get the integration test database URL."""
+    return INTEGRATION_DATABASE_URL
+
+
+@pytest.fixture(scope="session")
+def integration_config() -> TokenLedgerConfig:
+    """Create configuration for integration tests."""
+    return TokenLedgerConfig(
+        database_url=INTEGRATION_DATABASE_URL,
+        app_name="integration-test",
+        environment="test",
+        async_mode=False,
+        debug=True,
+        batch_size=10,
+        flush_interval_seconds=0.1,
+        sample_rate=1.0,
+    )
+
+
+@pytest.fixture(scope="session")
+def async_integration_config() -> TokenLedgerConfig:
+    """Create async configuration for integration tests."""
+    return TokenLedgerConfig(
+        database_url=INTEGRATION_DATABASE_URL,
+        app_name="integration-test-async",
+        environment="test",
+        async_mode=True,
+        debug=True,
+        batch_size=10,
+        flush_interval_seconds=0.1,
+        sample_rate=1.0,
+    )
+
+
+@pytest.fixture
+def clean_events_table(integration_database_url: str) -> Generator[None, None, None]:
+    """Clean the events table before and after each test."""
+    import psycopg2
+
+    def truncate() -> None:
+        try:
+            conn = psycopg2.connect(integration_database_url)
+            with conn.cursor() as cur:
+                cur.execute("TRUNCATE TABLE token_ledger_events")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass  # Table might not exist yet
+
+    truncate()
+    yield
+    truncate()
 
 
 @pytest.fixture
