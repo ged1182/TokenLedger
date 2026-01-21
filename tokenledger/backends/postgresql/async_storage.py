@@ -13,7 +13,7 @@ from tokenledger.backends.base import BaseAsyncStorageBackend
 from tokenledger.backends.exceptions import ConnectionError, DriverNotFoundError
 from tokenledger.backends.protocol import BackendCapabilities
 
-from .schema import get_full_schema_sql, get_health_check_sql, get_insert_sql_asyncpg
+from .schema import get_health_check_sql, get_insert_sql_asyncpg, get_schema_statements
 
 if TYPE_CHECKING:
     from tokenledger.config import TokenLedgerConfig
@@ -121,10 +121,11 @@ class AsyncPostgreSQLBackend(BaseAsyncStorageBackend):
         if not self._config or not self._pool:
             return
 
-        sql = get_full_schema_sql(self._config)
+        statements = get_schema_statements(self._config)
 
         async with self._pool.acquire() as conn:
-            await conn.execute(sql)
+            for sql in statements:
+                await conn.execute(sql)
 
         if self._config.debug:
             logger.info(f"Created schema for table {self._config.full_table_name}")
