@@ -3,6 +3,8 @@ TokenLedger Core Tracker
 Handles event logging to PostgreSQL with batching and async support.
 """
 
+from __future__ import annotations
+
 import atexit
 import json
 import logging
@@ -14,10 +16,13 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from queue import Empty, Queue
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .config import TokenLedgerConfig, get_config
 from .pricing import calculate_cost
+
+if TYPE_CHECKING:
+    from .backends.postgresql import AsyncPostgreSQLBackend, PostgreSQLBackend
 
 logger = logging.getLogger("tokenledger")
 
@@ -95,9 +100,25 @@ class TokenTracker:
     """
     Main tracker class for logging LLM events to PostgreSQL.
     Supports batching, async logging, and sampling.
+
+    Can optionally use the new backend abstraction for database operations.
+    When use_backend=True, uses the PostgreSQLBackend from the backends module.
     """
 
-    def __init__(self, config: TokenLedgerConfig | None = None):
+    def __init__(
+        self,
+        config: TokenLedgerConfig | None = None,
+        use_backend: bool = False,
+        backend: PostgreSQLBackend | None = None,
+    ):
+        """
+        Initialize the tracker.
+
+        Args:
+            config: TokenLedger configuration
+            use_backend: If True, use the new backend abstraction
+            backend: Optional pre-configured backend instance
+        """
         self.config = config or get_config()
         self._connection = None
         self._async_connection = None
@@ -108,6 +129,10 @@ class TokenTracker:
         self._running = False
         self._initialized = False
         self._use_psycopg2 = False  # Track which driver is being used
+
+        # Backend support
+        self._use_backend = use_backend or (backend is not None)
+        self._backend: PostgreSQLBackend | None = backend
 
         # Context for tracking
         self._context = threading.local()
@@ -145,16 +170,27 @@ class TokenTracker:
         if self._initialized:
             return
 
-        conn = self._get_connection()
-
-        if create_tables:
-            self._create_tables(conn)
+        if self._use_backend:
+            self._initialize_with_backend(create_tables)
+        else:
+            conn = self._get_connection()
+            if create_tables:
+                self._create_tables(conn)
 
         if self.config.async_mode:
             self._start_flush_thread()
 
         self._initialized = True
         atexit.register(self.shutdown)
+
+    def _initialize_with_backend(self, create_schema: bool = True) -> None:
+        """Initialize using the backend abstraction."""
+        if self._backend is None:
+            from .backends.postgresql import PostgreSQLBackend
+
+            self._backend = PostgreSQLBackend()
+
+        self._backend.initialize(self.config, create_schema=create_schema)
 
     def _create_tables(self, conn) -> None:
         """Create the events table if it doesn't exist"""
@@ -305,6 +341,14 @@ class TokenTracker:
         if not events:
             return 0
 
+        # Convert LLMEvent objects to dicts
+        event_dicts = [event.to_dict() for event in events]
+
+        # Use backend if enabled
+        if self._use_backend and self._backend is not None:
+            return self._backend.write_events(event_dicts)
+
+        # Legacy path: direct database connection
         conn = self._get_connection()
 
         columns = [
@@ -337,9 +381,8 @@ class TokenTracker:
         ]
 
         values = []
-        for event in events:
-            d = event.to_dict()
-            values.append(tuple(d.get(col) for col in columns))
+        for event_dict in event_dicts:
+            values.append(tuple(event_dict.get(col) for col in columns))
 
         try:
             with conn.cursor() as cur:
@@ -398,6 +441,13 @@ class TokenTracker:
         if self._flush_thread:
             self._flush_thread.join(timeout=5.0)
         self.flush()
+
+        # Close backend if using it
+        if self._backend is not None:
+            self._backend.close()
+            self._backend = None
+
+        # Close legacy connection
         if self._connection:
             self._connection.close()
             self._connection = None
@@ -407,6 +457,9 @@ class AsyncTokenTracker:
     """
     Async tracker class for logging LLM events to PostgreSQL using asyncpg.
     Supports connection pooling and true async operations.
+
+    Can optionally use the new backend abstraction for database operations.
+    When use_backend=True, uses the AsyncPostgreSQLBackend from the backends module.
 
     Example:
         >>> from tokenledger import AsyncTokenTracker, LLMEvent
@@ -420,12 +473,29 @@ class AsyncTokenTracker:
         >>> await tracker.shutdown()
     """
 
-    def __init__(self, config: TokenLedgerConfig | None = None):
+    def __init__(
+        self,
+        config: TokenLedgerConfig | None = None,
+        use_backend: bool = False,
+        backend: AsyncPostgreSQLBackend | None = None,
+    ):
+        """
+        Initialize the async tracker.
+
+        Args:
+            config: TokenLedger configuration
+            use_backend: If True, use the new backend abstraction
+            backend: Optional pre-configured backend instance
+        """
         self.config = config or get_config()
         self._db: Any = None
         self._batch: list[LLMEvent] = []
         self._lock: Any = None  # asyncio.Lock, set on first use
         self._initialized = False
+
+        # Backend support
+        self._use_backend = use_backend or (backend is not None)
+        self._backend: AsyncPostgreSQLBackend | None = backend
 
         # Context for tracking
         self._context_var = None  # Will be initialized on first use
@@ -463,17 +533,39 @@ class AsyncTokenTracker:
         if self._initialized:
             return
 
-        db = await self._get_db()
-        await db.initialize(
-            min_size=min_pool_size,
-            max_size=max_pool_size,
-            create_tables=create_tables,
-        )
+        if self._use_backend:
+            await self._initialize_with_backend(create_tables, min_pool_size, max_pool_size)
+        else:
+            db = await self._get_db()
+            await db.initialize(
+                min_size=min_pool_size,
+                max_size=max_pool_size,
+                create_tables=create_tables,
+            )
 
         self._initialized = True
 
         if self.config.debug:
             logger.info("AsyncTokenTracker initialized")
+
+    async def _initialize_with_backend(
+        self,
+        create_schema: bool = True,
+        min_pool_size: int = 2,
+        max_pool_size: int = 10,
+    ) -> None:
+        """Initialize using the backend abstraction."""
+        if self._backend is None:
+            from .backends.postgresql import AsyncPostgreSQLBackend
+
+            self._backend = AsyncPostgreSQLBackend()
+
+        await self._backend.initialize(
+            self.config,
+            create_schema=create_schema,
+            min_pool_size=min_pool_size,
+            max_pool_size=max_pool_size,
+        )
 
     async def track(self, event: LLMEvent) -> None:
         """
@@ -521,8 +613,14 @@ class AsyncTokenTracker:
         if not events:
             return 0
 
-        db = await self._get_db()
         event_dicts = [event.to_dict() for event in events]
+
+        # Use backend if enabled
+        if self._use_backend and self._backend is not None:
+            return await self._backend.write_events(event_dicts)
+
+        # Legacy path: use AsyncDatabase
+        db = await self._get_db()
         return await db.insert_events(event_dicts)
 
     async def flush(self) -> int:
@@ -540,6 +638,12 @@ class AsyncTokenTracker:
         """Shutdown the async tracker, flushing any pending events."""
         await self.flush()
 
+        # Close backend if using it
+        if self._backend is not None:
+            await self._backend.close()
+            self._backend = None
+
+        # Close legacy AsyncDatabase
         if self._db:
             await self._db.close()
             self._db = None
