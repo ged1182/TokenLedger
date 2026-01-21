@@ -1,4 +1,4 @@
-.PHONY: help install dev setup test test-cov test-integration test-all lint format typecheck check build clean dashboard docker-up docker-down db-start db-stop db-shell db-logs
+.PHONY: help install dev setup test test-cov test-integration test-all lint format typecheck check build clean dashboard docker-up docker-down db-start db-stop db-shell db-logs migrate migrate-up migrate-down migrate-new migrate-history migrate-sql
 
 # Default target
 help:
@@ -26,6 +26,14 @@ help:
 	@echo "  make db-stop          Stop PostgreSQL test database"
 	@echo "  make db-shell         Open psql shell to test database"
 	@echo "  make db-logs          View database container logs"
+	@echo ""
+	@echo "Migrations (Alembic):"
+	@echo "  make migrate          Apply all pending migrations"
+	@echo "  make migrate-up       Apply next migration"
+	@echo "  make migrate-down     Rollback last migration"
+	@echo "  make migrate-new      Create new migration (use msg='description')"
+	@echo "  make migrate-history  Show migration history"
+	@echo "  make migrate-sql      Generate SQL for migrations (no apply)"
 	@echo ""
 	@echo "Build:"
 	@echo "  make build            Build package (wheel + sdist)"
@@ -98,6 +106,39 @@ db-logs:
 db-reset: db-stop
 	docker volume rm tokenledger_postgres_test_data 2>/dev/null || true
 	$(MAKE) db-start db-wait
+
+# =============================================================================
+# Migrations (Alembic)
+# =============================================================================
+# Note: Set DATABASE_URL or TOKENLEDGER_DATABASE_URL environment variable
+
+migrate: db-start db-wait
+	@echo "Applying all pending migrations..."
+	DATABASE_URL=postgresql://tokenledger:tokenledger@localhost:5433/tokenledger_test alembic upgrade head
+
+migrate-up:
+	@echo "Applying next migration..."
+	alembic upgrade +1
+
+migrate-down:
+	@echo "Rolling back last migration..."
+	alembic downgrade -1
+
+migrate-new:
+ifndef msg
+	$(error Usage: make migrate-new msg="your migration description")
+endif
+	alembic revision -m "$(msg)"
+
+migrate-history:
+	alembic history --verbose
+
+migrate-sql:
+	@echo "Generating SQL for all pending migrations..."
+	alembic upgrade head --sql
+
+migrate-current:
+	alembic current
 
 # =============================================================================
 # Code Quality

@@ -196,6 +196,74 @@ SKIPPED [1] tests/integration/test_tracker.py - PostgreSQL not available
          (run: docker compose -f docker-compose.test.yml up -d)
 ```
 
+## Database Migrations
+
+TokenLedger uses [Alembic](https://alembic.sqlalchemy.org/) for PostgreSQL schema migrations.
+
+### Migration Commands
+
+```bash
+make migrate          # Apply all pending migrations
+make migrate-up       # Apply next migration only
+make migrate-down     # Rollback last migration
+make migrate-new msg="add new column"  # Create new migration
+make migrate-history  # Show migration history
+make migrate-sql      # Generate SQL without applying
+```
+
+### Creating a New Migration
+
+When you need to change the database schema:
+
+1. **Create the migration file**
+   ```bash
+   make migrate-new msg="add user preferences column"
+   ```
+
+2. **Edit the generated file** in `alembic/versions/`
+   ```python
+   def upgrade() -> None:
+       op.add_column('token_ledger_events',
+           sa.Column('preferences', postgresql.JSONB(), nullable=True)
+       )
+
+   def downgrade() -> None:
+       op.drop_column('token_ledger_events', 'preferences')
+   ```
+
+3. **Test the migration**
+   ```bash
+   make db-reset           # Fresh database
+   make migrate            # Apply migrations
+   make test-integration   # Run tests
+   ```
+
+4. **Verify rollback works**
+   ```bash
+   make migrate-down       # Rollback
+   make migrate            # Re-apply
+   ```
+
+### Migration Best Practices
+
+- **Always write `downgrade()`** - Every migration must be reversible
+- **Test on fresh database** - Use `make db-reset` before testing
+- **Keep migrations small** - One logical change per migration
+- **Don't modify old migrations** - Create new ones instead
+- **Use `op.execute()` for raw SQL** when needed (views, functions)
+
+### Environment Configuration
+
+Migrations read the database URL from:
+1. `TOKENLEDGER_DATABASE_URL` environment variable
+2. `DATABASE_URL` environment variable
+3. `sqlalchemy.url` in `alembic.ini` (not recommended for production)
+
+```bash
+# Example: Run migrations against production
+TOKENLEDGER_DATABASE_URL=postgresql://user:pass@host/db alembic upgrade head
+```
+
 ## Pull Request Process
 
 1. **Create a feature branch**
