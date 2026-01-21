@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-import pytest
-
 from tokenledger.config import TokenLedgerConfig, configure, get_config
 
 
@@ -88,9 +86,7 @@ class TestTokenLedgerConfig:
 
     def test_default_metadata(self) -> None:
         """Test default metadata initialization."""
-        config = TokenLedgerConfig(
-            default_metadata={"service": "api", "version": "1.0"}
-        )
+        config = TokenLedgerConfig(default_metadata={"service": "api", "version": "1.0"})
 
         assert config.default_metadata == {"service": "api", "version": "1.0"}
 

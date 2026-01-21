@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch, AsyncMock
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from tokenledger.queries import (
+    AsyncTokenLedgerQueries,
     CostSummary,
-    ModelCost,
-    UserCost,
     DailyCost,
     HourlyCost,
+    ModelCost,
     TokenLedgerQueries,
-    AsyncTokenLedgerQueries,
+    UserCost,
 )
-from tokenledger.config import TokenLedgerConfig
 
 
 class TestDataclasses:
@@ -170,7 +169,7 @@ class TestTokenLedgerQueries:
         mock_cursor.fetchone.return_value = (Decimal("50.00"), 25000, 15000, 10000, 50)
 
         queries = TokenLedgerQueries(connection=mock_conn)
-        summary = queries.get_cost_summary(
+        queries.get_cost_summary(
             days=7,
             user_id="user-123",
             model="gpt-4o",
@@ -601,9 +600,7 @@ class TestAsyncTokenLedgerQueries:
     async def test_async_get_projected_monthly_cost(self) -> None:
         """Test async get_projected_monthly_cost calculation."""
         mock_db = AsyncMock()
-        mock_db.fetchrow = AsyncMock(
-            return_value=[Decimal("70.00"), 35000, 21000, 14000, 70]
-        )
+        mock_db.fetchrow = AsyncMock(return_value=[Decimal("70.00"), 35000, 21000, 14000, 70])
 
         queries = AsyncTokenLedgerQueries(db=mock_db)
         projection = await queries.get_projected_monthly_cost(based_on_days=7)

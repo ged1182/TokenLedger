@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 import time
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tokenledger.decorators import track_llm, track_cost, _detect_provider, _extract_from_response
+from tokenledger.decorators import _detect_provider, _extract_from_response, track_cost, track_llm
 from tokenledger.tracker import LLMEvent
 
 
@@ -170,9 +170,7 @@ class TestTrackLlmDecorator:
         assert tracked_event.model == "unknown"
 
     @patch("tokenledger.decorators.get_tracker")
-    def test_decorator_preserves_function_metadata(
-        self, mock_get_tracker: MagicMock
-    ) -> None:
+    def test_decorator_preserves_function_metadata(self, mock_get_tracker: MagicMock) -> None:
         """Test decorator preserves original function metadata."""
         mock_tracker = MagicMock()
         mock_get_tracker.return_value = mock_tracker
@@ -211,9 +209,7 @@ class TestTrackLlmDecoratorAsync:
 
     @pytest.mark.asyncio
     @patch("tokenledger.decorators.get_tracker")
-    async def test_async_function_tracks_errors(
-        self, mock_get_tracker: MagicMock
-    ) -> None:
+    async def test_async_function_tracks_errors(self, mock_get_tracker: MagicMock) -> None:
         """Test decorator tracks errors from async functions."""
         mock_tracker = MagicMock()
         mock_get_tracker.return_value = mock_tracker
@@ -233,9 +229,7 @@ class TestTrackLlmDecoratorAsync:
 
     @pytest.mark.asyncio
     @patch("tokenledger.decorators.get_tracker")
-    async def test_async_function_tracks_duration(
-        self, mock_get_tracker: MagicMock
-    ) -> None:
+    async def test_async_function_tracks_duration(self, mock_get_tracker: MagicMock) -> None:
         """Test decorator tracks async function duration."""
         import asyncio
 

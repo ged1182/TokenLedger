@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock, AsyncMock
-import uuid
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from tokenledger.config import TokenLedgerConfig, configure
+from tokenledger.config import TokenLedgerConfig
 
 
 @pytest.fixture
@@ -115,6 +115,7 @@ def mock_anthropic_response():
 def reset_global_config():
     """Reset global configuration before each test."""
     import tokenledger.config as config_module
+
     config_module._config = None
     yield
     config_module._config = None
@@ -124,6 +125,7 @@ def reset_global_config():
 def reset_global_trackers():
     """Reset global tracker instances before each test."""
     import tokenledger.tracker as tracker_module
+
     tracker_module._tracker = None
     tracker_module._async_tracker = None
     yield

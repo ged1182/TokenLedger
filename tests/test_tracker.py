@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch, AsyncMock
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from tokenledger.config import TokenLedgerConfig
 from tokenledger.tracker import (
+    AsyncTokenTracker,
     LLMEvent,
     TokenTracker,
-    AsyncTokenTracker,
-    get_tracker,
     get_async_tracker,
+    get_tracker,
     track_event,
     track_event_async,
 )
@@ -203,9 +202,7 @@ class TestTokenTracker:
         assert tracker._batch[0] == event
 
     @patch("tokenledger.tracker.TokenTracker._get_connection")
-    def test_track_applies_default_metadata(
-        self, mock_get_conn: MagicMock
-    ) -> None:
+    def test_track_applies_default_metadata(self, mock_get_conn: MagicMock) -> None:
         """Test that default metadata is applied to events."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -328,9 +325,7 @@ class TestTokenTracker:
         # Context should be cleared after exiting
         assert not hasattr(tracker._context, "trace_id")
 
-    def test_trace_context_manager_with_provided_id(
-        self, mock_config: TokenLedgerConfig
-    ) -> None:
+    def test_trace_context_manager_with_provided_id(self, mock_config: TokenLedgerConfig) -> None:
         """Test the trace context manager with a provided trace ID."""
         tracker = TokenTracker(config=mock_config)
         custom_trace_id = "custom-trace-123"
@@ -352,9 +347,7 @@ class TestTokenTracker:
 class TestAsyncTokenTracker:
     """Tests for AsyncTokenTracker class."""
 
-    def test_async_tracker_initialization(
-        self, async_mock_config: TokenLedgerConfig
-    ) -> None:
+    def test_async_tracker_initialization(self, async_mock_config: TokenLedgerConfig) -> None:
         """Test AsyncTokenTracker initialization."""
         tracker = AsyncTokenTracker(config=async_mock_config)
 
@@ -364,14 +357,13 @@ class TestAsyncTokenTracker:
         assert len(tracker._batch) == 0
 
     @pytest.mark.asyncio
-    async def test_async_tracker_uses_lock(
-        self, async_mock_config: TokenLedgerConfig
-    ) -> None:
+    async def test_async_tracker_uses_lock(self, async_mock_config: TokenLedgerConfig) -> None:
         """Test that async tracker uses async lock."""
         tracker = AsyncTokenTracker(config=async_mock_config)
         lock = await tracker._get_lock()
 
         import asyncio
+
         assert isinstance(lock, asyncio.Lock)
 
     @pytest.mark.asyncio
@@ -441,9 +433,7 @@ class TestGlobalTrackers:
         assert tracker1 is tracker2  # Same instance
 
     @patch("tokenledger.tracker.get_tracker")
-    def test_track_event_uses_global_tracker(
-        self, mock_get_tracker: MagicMock
-    ) -> None:
+    def test_track_event_uses_global_tracker(self, mock_get_tracker: MagicMock) -> None:
         """Test that track_event uses the global tracker."""
         mock_tracker = MagicMock()
         mock_get_tracker.return_value = mock_tracker
