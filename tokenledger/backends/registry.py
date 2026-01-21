@@ -10,7 +10,7 @@ import importlib
 import inspect
 import logging
 from importlib.metadata import entry_points
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from .exceptions import BackendNotFoundError, DriverNotFoundError
 
@@ -265,7 +265,7 @@ def create_storage_backend(
     backend_class = load_storage_backend(name)
     backend = backend_class()
     backend.initialize(config, create_schema=create_schema)
-    return backend
+    return cast("StorageBackend", backend)
 
 
 async def create_async_storage_backend(
@@ -296,7 +296,7 @@ async def create_async_storage_backend(
     else:
         raise ValueError(f"Backend '{name}' does not support async operations")
 
-    return backend
+    return cast("AsyncStorageBackend", backend)
 
 
 def parse_database_url(url: str) -> tuple[str, str]:
