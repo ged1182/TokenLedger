@@ -151,7 +151,9 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgresql://tokenledger:tokenledger@localhost:5432/tokenledger
-        run: pytest -m integration --cov=tokenledger --cov-report=xml
+        run: |
+          # Exit code 5 means no tests collected - that's OK if no integration tests exist yet
+          pytest -m integration --cov=tokenledger --cov-report=xml || [ $? -eq 5 ]
 
   # ============================================================================
   # Build Verification
@@ -205,11 +207,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: dashboard/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build dashboard
         run: npm run build
