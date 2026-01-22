@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
-import pytest
+from datetime import datetime
 
 from tokenledger.models import LLMEvent, create_event_safe
 
