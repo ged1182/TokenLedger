@@ -87,7 +87,7 @@ class TestGetCreateIndexesSql:
         """Test that function returns a list of SQL statements."""
         indexes = get_create_indexes_sql(config)
         assert isinstance(indexes, list)
-        assert len(indexes) == 4  # 4 indexes
+        assert len(indexes) == 8  # 4 base indexes + 4 attribution indexes
 
     def test_each_contains_create_index(self, config: TokenLedgerConfig) -> None:
         """Test that each SQL contains CREATE INDEX."""
@@ -145,9 +145,9 @@ class TestGetSchemaStatements:
             assert "CREATE INDEX IF NOT EXISTS" in sql
 
     def test_total_statement_count(self, config: TokenLedgerConfig) -> None:
-        """Test total number of statements (1 table + 4 indexes)."""
+        """Test total number of statements (1 table + 8 indexes)."""
         statements = get_schema_statements(config)
-        assert len(statements) == 5
+        assert len(statements) == 9
 
 
 class TestGetInsertSqlPsycopg2:

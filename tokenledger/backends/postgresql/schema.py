@@ -59,7 +59,16 @@ def get_create_table_sql(config: TokenLedgerConfig) -> str:
         metadata JSONB,
 
         request_preview TEXT,
-        response_preview TEXT
+        response_preview TEXT,
+
+        -- Attribution fields
+        feature VARCHAR(100),
+        page VARCHAR(255),
+        component VARCHAR(100),
+        team VARCHAR(100),
+        project VARCHAR(100),
+        cost_center VARCHAR(100),
+        metadata_extra JSONB
     );
     """
 
@@ -83,6 +92,15 @@ def get_create_indexes_sql(config: TokenLedgerConfig) -> list[str]:
         f"ON {config.full_table_name} (model, timestamp DESC);",
         f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_app "
         f"ON {config.full_table_name} (app_name, environment, timestamp DESC);",
+        # Attribution indexes
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_feature "
+        f"ON {config.full_table_name} (feature, timestamp DESC);",
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_team "
+        f"ON {config.full_table_name} (team, timestamp DESC);",
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_project "
+        f"ON {config.full_table_name} (project, timestamp DESC);",
+        f"CREATE INDEX IF NOT EXISTS idx_{config.table_name}_cost_center "
+        f"ON {config.full_table_name} (cost_center, timestamp DESC);",
     ]
 
 

@@ -6,94 +6,23 @@ Handles event logging to PostgreSQL with batching and async support.
 from __future__ import annotations
 
 import atexit
-import json
 import logging
 import random
 import threading
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime
 from queue import Empty, Queue
 from typing import TYPE_CHECKING, Any
 
 from .config import TokenLedgerConfig, get_config
-from .pricing import calculate_cost
+from .context import get_attribution_context
+from .models import LLMEvent  # noqa: TC001 - used at runtime
 
 if TYPE_CHECKING:
     from .backends.postgresql import AsyncPostgreSQLBackend, PostgreSQLBackend
 
 logger = logging.getLogger("tokenledger")
-
-
-@dataclass
-class LLMEvent:
-    """Represents a single LLM API call event"""
-
-    # Identifiers
-    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    trace_id: str | None = None
-    span_id: str | None = None
-    parent_span_id: str | None = None
-
-    # Timing
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    duration_ms: float | None = None
-
-    # Provider & Model
-    provider: str = ""
-    model: str = ""
-
-    # Token counts
-    input_tokens: int = 0
-    output_tokens: int = 0
-    total_tokens: int = 0
-    cached_tokens: int = 0
-
-    # Cost
-    cost_usd: float | None = None
-
-    # Request details
-    endpoint: str | None = None
-    request_type: str = "chat"  # chat, completion, embedding, etc.
-
-    # User & context
-    user_id: str | None = None
-    session_id: str | None = None
-    organization_id: str | None = None
-
-    # Application context
-    app_name: str | None = None
-    environment: str | None = None
-
-    # Status
-    status: str = "success"  # success, error, timeout
-    error_type: str | None = None
-    error_message: str | None = None
-
-    # Custom metadata
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    # Request/Response (optional, for debugging)
-    request_preview: str | None = None  # First N chars of prompt
-    response_preview: str | None = None  # First N chars of response
-
-    def __post_init__(self):
-        self.total_tokens = self.input_tokens + self.output_tokens
-
-        # Calculate cost if not provided
-        if self.cost_usd is None and self.model:
-            self.cost_usd = calculate_cost(
-                self.model, self.input_tokens, self.output_tokens, self.cached_tokens, self.provider
-            )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for database insertion"""
-        d = asdict(self)
-        d["timestamp"] = self.timestamp.isoformat()
-        d["metadata"] = json.dumps(self.metadata) if self.metadata else None
-        return d
 
 
 class TokenTracker:
@@ -231,7 +160,16 @@ class TokenTracker:
             metadata JSONB,
 
             request_preview TEXT,
-            response_preview TEXT
+            response_preview TEXT,
+
+            -- Attribution fields
+            feature VARCHAR(100),
+            page VARCHAR(255),
+            component VARCHAR(100),
+            team VARCHAR(100),
+            project VARCHAR(100),
+            cost_center VARCHAR(100),
+            metadata_extra JSONB
         );
 
         -- Indexes for common queries
@@ -243,6 +181,41 @@ class TokenTracker:
             ON {self.config.full_table_name} (model, timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_app
             ON {self.config.full_table_name} (app_name, environment, timestamp DESC);
+        -- Attribution indexes
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_feature
+            ON {self.config.full_table_name} (feature, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_team
+            ON {self.config.full_table_name} (team, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_project
+            ON {self.config.full_table_name} (project, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_cost_center
+            ON {self.config.full_table_name} (cost_center, timestamp DESC);
+
+        -- Helper views
+        CREATE OR REPLACE VIEW token_ledger_daily_costs AS
+        SELECT
+            DATE(timestamp) as date,
+            provider,
+            model,
+            COUNT(*) as request_count,
+            SUM(input_tokens) as total_input_tokens,
+            SUM(output_tokens) as total_output_tokens,
+            SUM(total_tokens) as total_tokens,
+            SUM(cost_usd) as total_cost,
+            AVG(duration_ms) as avg_latency_ms
+        FROM {self.config.full_table_name}
+        GROUP BY DATE(timestamp), provider, model;
+
+        CREATE OR REPLACE VIEW token_ledger_user_costs AS
+        SELECT
+            COALESCE(user_id, 'anonymous') as user_id,
+            COUNT(*) as request_count,
+            SUM(total_tokens) as total_tokens,
+            SUM(cost_usd) as total_cost,
+            MIN(timestamp) as first_request,
+            MAX(timestamp) as last_request
+        FROM {self.config.full_table_name}
+        GROUP BY user_id;
         """
 
         with conn.cursor() as cur:
@@ -267,7 +240,7 @@ class TokenTracker:
             except Exception as e:
                 logger.error(f"Error in flush loop: {e}")
 
-    def track(self, event: LLMEvent) -> None:
+    def track(self, event: LLMEvent) -> None:  # noqa: PLR0912
         """
         Track an LLM event.
 
@@ -284,7 +257,8 @@ class TokenTracker:
 
         # Add default metadata
         if self.config.default_metadata:
-            event.metadata = {**self.config.default_metadata, **event.metadata}
+            existing_metadata = event.metadata or {}
+            event.metadata = {**self.config.default_metadata, **existing_metadata}
 
         # Add app info
         if not event.app_name:
@@ -295,6 +269,31 @@ class TokenTracker:
         # Add trace context if available
         if hasattr(self._context, "trace_id") and not event.trace_id:
             event.trace_id = self._context.trace_id
+
+        # Apply attribution context
+        attr_ctx = get_attribution_context()
+        if attr_ctx is not None:
+            if attr_ctx.user_id is not None and event.user_id is None:
+                event.user_id = attr_ctx.user_id
+            if attr_ctx.session_id is not None and event.session_id is None:
+                event.session_id = attr_ctx.session_id
+            if attr_ctx.organization_id is not None and event.organization_id is None:
+                event.organization_id = attr_ctx.organization_id
+            if attr_ctx.feature is not None and event.feature is None:
+                event.feature = attr_ctx.feature
+            if attr_ctx.page is not None and event.page is None:
+                event.page = attr_ctx.page
+            if attr_ctx.component is not None and event.component is None:
+                event.component = attr_ctx.component
+            if attr_ctx.team is not None and event.team is None:
+                event.team = attr_ctx.team
+            if attr_ctx.project is not None and event.project is None:
+                event.project = attr_ctx.project
+            if attr_ctx.cost_center is not None and event.cost_center is None:
+                event.cost_center = attr_ctx.cost_center
+            if attr_ctx.metadata_extra:
+                existing_extra = event.metadata_extra or {}
+                event.metadata_extra = {**attr_ctx.metadata_extra, **existing_extra}
 
         if self.config.async_mode:
             try:
@@ -378,6 +377,14 @@ class TokenTracker:
             "metadata",
             "request_preview",
             "response_preview",
+            # Attribution fields
+            "feature",
+            "page",
+            "component",
+            "team",
+            "project",
+            "cost_center",
+            "metadata_extra",
         ]
 
         values = []
@@ -567,7 +574,7 @@ class AsyncTokenTracker:
             max_pool_size=max_pool_size,
         )
 
-    async def track(self, event: LLMEvent) -> None:
+    async def track(self, event: LLMEvent) -> None:  # noqa: PLR0912
         """
         Track an LLM event asynchronously.
 
@@ -584,13 +591,39 @@ class AsyncTokenTracker:
 
         # Add default metadata
         if self.config.default_metadata:
-            event.metadata = {**self.config.default_metadata, **event.metadata}
+            existing_metadata = event.metadata or {}
+            event.metadata = {**self.config.default_metadata, **existing_metadata}
 
         # Add app info
         if not event.app_name:
             event.app_name = self.config.app_name
         if not event.environment:
             event.environment = self.config.environment
+
+        # Apply attribution context
+        attr_ctx = get_attribution_context()
+        if attr_ctx is not None:
+            if attr_ctx.user_id is not None and event.user_id is None:
+                event.user_id = attr_ctx.user_id
+            if attr_ctx.session_id is not None and event.session_id is None:
+                event.session_id = attr_ctx.session_id
+            if attr_ctx.organization_id is not None and event.organization_id is None:
+                event.organization_id = attr_ctx.organization_id
+            if attr_ctx.feature is not None and event.feature is None:
+                event.feature = attr_ctx.feature
+            if attr_ctx.page is not None and event.page is None:
+                event.page = attr_ctx.page
+            if attr_ctx.component is not None and event.component is None:
+                event.component = attr_ctx.component
+            if attr_ctx.team is not None and event.team is None:
+                event.team = attr_ctx.team
+            if attr_ctx.project is not None and event.project is None:
+                event.project = attr_ctx.project
+            if attr_ctx.cost_center is not None and event.cost_center is None:
+                event.cost_center = attr_ctx.cost_center
+            if attr_ctx.metadata_extra:
+                existing_extra = event.metadata_extra or {}
+                event.metadata_extra = {**attr_ctx.metadata_extra, **existing_extra}
 
         lock = await self._get_lock()
         async with lock:

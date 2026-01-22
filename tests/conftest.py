@@ -45,6 +45,33 @@ def integration_database_url() -> str:
     return INTEGRATION_DATABASE_URL
 
 
+@pytest.fixture(scope="session", autouse=True)
+def reset_database_schema(integration_database_url: str) -> Generator[None, None, None]:
+    """Reset database schema at the start of the test session.
+
+    This ensures we have a fresh schema with all new columns when running
+    integration tests. Runs automatically at the start of the session.
+    """
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(integration_database_url, connect_timeout=2)
+        with conn.cursor() as cur:
+            # Drop all tokenledger tables and views to get a fresh schema
+            cur.execute("DROP VIEW IF EXISTS token_ledger_daily_costs CASCADE")
+            cur.execute("DROP VIEW IF EXISTS token_ledger_user_costs CASCADE")
+            cur.execute("DROP VIEW IF EXISTS token_ledger_team_costs CASCADE")
+            cur.execute("DROP VIEW IF EXISTS token_ledger_feature_costs CASCADE")
+            cur.execute("DROP VIEW IF EXISTS token_ledger_cost_center_costs CASCADE")
+            cur.execute("DROP TABLE IF EXISTS token_ledger_events CASCADE")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Database might not be available
+
+    yield
+
+
 @pytest.fixture(scope="session")
 def integration_config() -> TokenLedgerConfig:
     """Create configuration for integration tests."""
@@ -77,22 +104,26 @@ def async_integration_config() -> TokenLedgerConfig:
 
 @pytest.fixture
 def clean_events_table(integration_database_url: str) -> Generator[None, None, None]:
-    """Clean the events table before and after each test."""
+    """Clean the events table before and after each test.
+
+    Drops and recreates the table to ensure schema is up-to-date.
+    """
     import psycopg2
 
-    def truncate() -> None:
+    def recreate_table() -> None:
         try:
             conn = psycopg2.connect(integration_database_url)
             with conn.cursor() as cur:
-                cur.execute("TRUNCATE TABLE token_ledger_events")
+                # Drop table to ensure schema is fresh
+                cur.execute("DROP TABLE IF EXISTS token_ledger_events CASCADE")
             conn.commit()
             conn.close()
         except Exception:
-            pass  # Table might not exist yet
+            pass
 
-    truncate()
+    recreate_table()
     yield
-    truncate()
+    recreate_table()
 
 
 @pytest.fixture
