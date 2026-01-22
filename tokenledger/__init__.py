@@ -15,6 +15,7 @@ from .context import (
 )
 from .decorators import track_cost, track_llm
 from .interceptors.anthropic import patch_anthropic, unpatch_anthropic
+from .interceptors.google import patch_google, unpatch_google
 from .interceptors.openai import patch_openai, unpatch_openai
 from .models import LLMEvent, create_event_safe
 from .tracker import (
@@ -38,6 +39,7 @@ __all__ = [
     "get_config",
     "get_tracker",
     "patch_anthropic",
+    "patch_google",
     "patch_openai",
     "reset_attribution_context",
     "set_attribution_context",
@@ -45,5 +47,6 @@ __all__ = [
     "track_event_async",
     "track_llm",
     "unpatch_anthropic",
+    "unpatch_google",
     "unpatch_openai",
 ]
