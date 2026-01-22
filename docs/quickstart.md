@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS token_ledger_events (
     total_tokens INTEGER NOT NULL DEFAULT 0,
     cost_usd DECIMAL(12, 8),
     user_id VARCHAR(255),
+    session_id VARCHAR(255),
+    organization_id VARCHAR(255),
     app_name VARCHAR(100),
     environment VARCHAR(50),
     status VARCHAR(20) DEFAULT 'success',
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS token_ledger_events (
 
 CREATE INDEX idx_token_ledger_timestamp ON token_ledger_events (timestamp DESC);
 CREATE INDEX idx_token_ledger_user ON token_ledger_events (user_id, timestamp DESC);
+CREATE INDEX idx_token_ledger_org ON token_ledger_events (organization_id, timestamp DESC);
 ```
 
 ## Step 3: Integrate (2 lines!)
@@ -118,6 +121,114 @@ tokenledger.configure(
 )
 ```
 
+## Adding User & Cost Attribution
+
+The real power of TokenLedger is attributing costs to users, organizations, features, and other dimensions. Here's how:
+
+### Using OpenAI's `user` Parameter
+
+The easiest way—pass the `user` parameter that OpenAI already supports:
+
+```python
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}],
+    user="user_123"  # TokenLedger captures this as user_id
+)
+```
+
+### Setting Default Metadata
+
+For metadata that applies to all requests (org, feature area, service name):
+
+```python
+tokenledger.configure(
+    database_url="postgresql://...",
+    app_name="chat-service",
+    environment="production",
+    default_metadata={
+        "organization_id": "org_456",
+        "feature": "customer-support",
+        "team": "platform"
+    }
+)
+```
+
+### Using Decorators for Full Control
+
+When you need per-request attribution with more fields:
+
+```python
+from tokenledger import track_llm
+
+@track_llm(
+    provider="openai",
+    user_id="user_123",
+    metadata={
+        "feature": "summarization",
+        "session_id": "sess_abc",
+        "customer_tier": "enterprise"
+    }
+)
+def summarize_document(doc: str):
+    return client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": f"Summarize: {doc}"}]
+    )
+```
+
+### Manual Tracking
+
+For streaming responses or custom integrations:
+
+```python
+from tokenledger import track_cost
+
+# After counting tokens from a streaming response
+track_cost(
+    input_tokens=150,
+    output_tokens=500,
+    model="gpt-4o",
+    user_id="user_123",
+    metadata={
+        "session_id": "sess_abc",
+        "feature": "chat",
+        "conversation_id": "conv_xyz"
+    }
+)
+```
+
+### Available Attribution Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_id` | string | Your user identifier |
+| `session_id` | string | Session or conversation ID |
+| `organization_id` | string | Org/tenant for multi-tenant apps |
+| `metadata` | JSON | Any custom dimensions |
+
+### Querying by Attribution
+
+```sql
+-- Cost by user
+SELECT user_id, SUM(cost_usd) as total_cost
+FROM token_ledger_events
+WHERE timestamp > NOW() - INTERVAL '7 days'
+GROUP BY user_id
+ORDER BY total_cost DESC;
+
+-- Cost by feature (from metadata)
+SELECT metadata->>'feature' as feature, SUM(cost_usd) as cost
+FROM token_ledger_events
+WHERE metadata->>'feature' IS NOT NULL
+GROUP BY feature;
+
+-- Cost by organization
+SELECT organization_id, COUNT(*) as requests, SUM(cost_usd) as cost
+FROM token_ledger_events
+GROUP BY organization_id;
+```
+
 ## What's Tracked
 
 For every LLM call, TokenLedger captures:
@@ -132,8 +243,10 @@ For every LLM call, TokenLedger captures:
 | `cost_usd` | Calculated cost |
 | `duration_ms` | Response latency |
 | `user_id` | Your user identifier |
+| `session_id` | Session or conversation ID |
+| `organization_id` | Org/tenant identifier |
 | `status` | success or error |
-| `metadata` | Custom JSON data |
+| `metadata` | Custom JSON data (feature, team, etc.) |
 
 ## Next Steps
 
