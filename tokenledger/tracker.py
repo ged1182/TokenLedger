@@ -190,6 +190,32 @@ class TokenTracker:
             ON {self.config.full_table_name} (project, timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_cost_center
             ON {self.config.full_table_name} (cost_center, timestamp DESC);
+
+        -- Helper views
+        CREATE OR REPLACE VIEW token_ledger_daily_costs AS
+        SELECT
+            DATE(timestamp) as date,
+            provider,
+            model,
+            COUNT(*) as request_count,
+            SUM(input_tokens) as total_input_tokens,
+            SUM(output_tokens) as total_output_tokens,
+            SUM(total_tokens) as total_tokens,
+            SUM(cost_usd) as total_cost,
+            AVG(duration_ms) as avg_latency_ms
+        FROM {self.config.full_table_name}
+        GROUP BY DATE(timestamp), provider, model;
+
+        CREATE OR REPLACE VIEW token_ledger_user_costs AS
+        SELECT
+            COALESCE(user_id, 'anonymous') as user_id,
+            COUNT(*) as request_count,
+            SUM(total_tokens) as total_tokens,
+            SUM(cost_usd) as total_cost,
+            MIN(timestamp) as first_request,
+            MAX(timestamp) as last_request
+        FROM {self.config.full_table_name}
+        GROUP BY user_id;
         """
 
         with conn.cursor() as cur:
