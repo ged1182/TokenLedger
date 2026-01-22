@@ -160,7 +160,16 @@ class TokenTracker:
             metadata JSONB,
 
             request_preview TEXT,
-            response_preview TEXT
+            response_preview TEXT,
+
+            -- Attribution fields
+            feature VARCHAR(100),
+            page VARCHAR(255),
+            component VARCHAR(100),
+            team VARCHAR(100),
+            project VARCHAR(100),
+            cost_center VARCHAR(100),
+            metadata_extra JSONB
         );
 
         -- Indexes for common queries
@@ -172,6 +181,15 @@ class TokenTracker:
             ON {self.config.full_table_name} (model, timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_app
             ON {self.config.full_table_name} (app_name, environment, timestamp DESC);
+        -- Attribution indexes
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_feature
+            ON {self.config.full_table_name} (feature, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_team
+            ON {self.config.full_table_name} (team, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_project
+            ON {self.config.full_table_name} (project, timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_{self.config.table_name}_cost_center
+            ON {self.config.full_table_name} (cost_center, timestamp DESC);
         """
 
         with conn.cursor() as cur:
