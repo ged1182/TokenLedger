@@ -53,6 +53,7 @@ server-async = [
 ]
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
+google = ["google-genai>=1.0.0"]
 all = [
     "psycopg2-binary>=2.9.0",
     "asyncpg>=0.29.0",
@@ -60,6 +61,7 @@ all = [
     "uvicorn[standard]>=0.24.0",
     "openai>=1.0.0",
     "anthropic>=0.18.0",
+    "google-genai>=1.0.0",
     "alembic>=1.13.0",
 ]
 dev = [
@@ -178,6 +180,9 @@ module = [
     "pydantic.*",
     "openai.*",
     "anthropic.*",
+    "google",
+    "google.*",
+    "google.genai.*",
 ]
 ignore_missing_imports = true
 
