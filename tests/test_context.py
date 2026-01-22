@@ -175,6 +175,7 @@ class TestAttributionDecorator:
 
     def test_sync_function(self) -> None:
         """Test decorating a sync function."""
+
         @attribution(feature="test", team="platform")
         def my_func() -> str:
             ctx = get_attribution_context()
@@ -186,6 +187,7 @@ class TestAttributionDecorator:
 
     def test_async_function(self) -> None:
         """Test decorating an async function."""
+
         @attribution(feature="async_test", team="ml")
         async def my_async_func() -> str:
             ctx = get_attribution_context()
