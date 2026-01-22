@@ -232,6 +232,7 @@ class TestTrackCostIntegration:
             environment="test",
             async_mode=False,
             batch_size=1,  # Immediate flush
+            schema_name="public",  # Use public schema for integration tests
         )
 
         track_cost(
