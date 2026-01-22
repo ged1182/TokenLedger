@@ -17,7 +17,7 @@ class TokenLedgerConfig:
 
     # Table configuration
     table_name: str = "token_ledger_events"
-    schema_name: str = "public"
+    schema_name: str = "token_ledger"  # Dedicated schema for isolation
 
     # Batching configuration
     batch_size: int = 100

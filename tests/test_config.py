@@ -16,7 +16,7 @@ class TestTokenLedgerConfig:
         config = TokenLedgerConfig()
 
         assert config.table_name == "token_ledger_events"
-        assert config.schema_name == "public"
+        assert config.schema_name == "token_ledger"  # Dedicated schema for isolation
         assert config.batch_size == 100
         assert config.flush_interval_seconds == 5.0
         assert config.async_mode is True
@@ -65,7 +65,7 @@ class TestTokenLedgerConfig:
         """Test the full_table_name with default values."""
         config = TokenLedgerConfig()
 
-        assert config.full_table_name == "public.token_ledger_events"
+        assert config.full_table_name == "token_ledger.token_ledger_events"
 
     def test_is_supabase_detection(self) -> None:
         """Test Supabase detection from URL."""

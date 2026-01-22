@@ -92,6 +92,36 @@ The attribution columns (`feature`, `page`, `component`, `team`, `project`, `cos
 
 ---
 
+### 3b. `metadata_extra` Column Missing from SQL Migrations
+
+**Priority:** MEDIUM
+**Files:** `migrations/001_initial.sql`, `migrations/002_add_attribution_columns.sql`
+**Status:** Open - will be fixed in Phase: CLI Migration System
+
+**Issue:**
+The `metadata_extra` JSONB column exists in:
+- `tokenledger/backends/postgresql/schema.py` (line 71)
+- `tokenledger/models.py` (line 100, `LLMEvent.metadata_extra`)
+
+But it is NOT present in the SQL migration files that users run manually.
+
+**Impact:**
+- Users who rely on `schema.py` (auto-create via `create_tables=True`) have the column
+- Users who run SQL migrations manually do NOT have the column
+- Inserts will fail if `metadata_extra` is set in `AttributionContext`
+
+**Workaround:**
+```sql
+ALTER TABLE token_ledger_events ADD COLUMN IF NOT EXISTS metadata_extra JSONB;
+```
+
+**Fix Plan:**
+Will be addressed as part of the CLI migration system (see `09_CLI_MIGRATION_PLAN.md`):
+- Migration v003 will add `metadata_extra` column
+- CLI system will ensure all migrations are applied in order
+
+---
+
 ## Documentation Issues
 
 ### 4. Database Driver Clarity
