@@ -66,6 +66,22 @@ Every OpenAI call is now automatically logged to your Postgres database with:
 - User ID (if provided)
 - Full request/response metadata
 
+### Streaming Support
+
+Streaming calls are also automatically tracked:
+
+```python
+# Streaming works seamlessly
+for chunk in openai.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True,
+    stream_options={"include_usage": True}  # Optional: get token counts
+):
+    print(chunk.choices[0].delta.content or "", end="")
+# Event is logged after stream completes
+```
+
 ### Works with Anthropic too
 
 ```python
@@ -375,10 +391,12 @@ python -m tokenledger.server
 - [x] Google Gemini support
 - [x] OpenAI audio/image API tracking
 - [x] pydantic-ai framework compatibility
+- [x] OpenAI streaming support
+- [x] Anthropic streaming support
+- [x] Google streaming support
 - [ ] Grafana integration
 - [ ] CLI for querying
 - [ ] More LLM providers (Mistral, Cohere)
-- [ ] OpenAI streaming support (Anthropic & Google streaming complete)
 - [ ] TimescaleDB optimization guide
 
 ## 📜 License

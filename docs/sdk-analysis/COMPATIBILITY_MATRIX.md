@@ -1,13 +1,13 @@
 # TokenLedger SDK Compatibility Matrix
 
 > **Last Updated**: 2026-01-22
-> **TokenLedger Version**: 0.2.0
+> **TokenLedger Version**: 0.2.1
 
 ## Executive Summary
 
 | Provider | SDK Version | Current Coverage | pydantic-ai Support | Status |
 |----------|-------------|------------------|---------------------|--------|
-| **OpenAI** | 2.15.0 | 85% (23/27) | ✅ Full | ✅ Production |
+| **OpenAI** | 2.15.0 | 89% (24/27) | ✅ Full | ✅ Production |
 | **Anthropic** | 0.76.0 | 92% (22/24) | ✅ Full | ✅ Production |
 | **Google** | 1.0.0+ | 90% (9/10) | ✅ Full | ✅ Production |
 
@@ -38,6 +38,12 @@
 - Token tracking from streamed chunks
 - Response text accumulation and preview
 
+### ✅ Phase 6: OpenAI Streaming (COMPLETED)
+- OpenAI streaming API (`chat.completions.create` with `stream=True`) sync/async support
+- Token tracking from streamed chunks (requires `stream_options={"include_usage": True}`)
+- Response text accumulation and preview
+- Attribution context propagation to streaming calls
+
 ## Detailed Coverage by Provider
 
 ### OpenAI Coverage
@@ -45,7 +51,7 @@
 | Category | API | Sync | Async | Patched | Notes |
 |----------|-----|------|-------|---------|-------|
 | **Text** | chat.completions.create | ✅ | ✅ | ✅ | Working |
-| | chat.completions.create (stream) | ✅ | ✅ | ❌ | Planned |
+| | chat.completions.create (stream) | ✅ | ✅ | ✅ | **Streaming support added** |
 | | completions.create | ✅ | ✅ | ❌ | Legacy, low usage |
 | | **responses.create** | ✅ | ✅ | ✅ | **pydantic-ai compatible** |
 | **Embeddings** | embeddings.create | ✅ | ✅ | ✅ | Full support |
@@ -148,9 +154,6 @@
 | `pyproject.toml` | ✅ Updated | google-genai dependency |
 
 ## Future Work
-
-### Planned
-- OpenAI streaming support (`chat.completions.create` with `stream=True`)
 
 ### Deferred (No Timeline)
 - OpenAI Video API (Sora)
