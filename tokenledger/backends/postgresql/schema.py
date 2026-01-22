@@ -104,6 +104,23 @@ def get_create_indexes_sql(config: TokenLedgerConfig) -> list[str]:
     ]
 
 
+def get_create_schema_sql(config: TokenLedgerConfig) -> str | None:
+    """
+    Generate CREATE SCHEMA IF NOT EXISTS statement.
+
+    Only needed when using a non-public schema.
+
+    Args:
+        config: TokenLedger configuration with schema name
+
+    Returns:
+        SQL CREATE SCHEMA statement, or None if using public schema
+    """
+    if config.schema_name == "public":
+        return None
+    return f"CREATE SCHEMA IF NOT EXISTS {config.schema_name};"
+
+
 def get_schema_statements(config: TokenLedgerConfig) -> list[str]:
     """
     Get all schema creation statements as a list.
@@ -116,7 +133,17 @@ def get_schema_statements(config: TokenLedgerConfig) -> list[str]:
     Returns:
         List of SQL statements to execute sequentially
     """
-    return [get_create_table_sql(config), *get_create_indexes_sql(config)]
+    statements = []
+
+    # Create schema first if not using public
+    schema_sql = get_create_schema_sql(config)
+    if schema_sql:
+        statements.append(schema_sql)
+
+    statements.append(get_create_table_sql(config))
+    statements.extend(get_create_indexes_sql(config))
+
+    return statements
 
 
 def get_insert_sql_psycopg2(config: TokenLedgerConfig, columns: tuple[str, ...]) -> str:

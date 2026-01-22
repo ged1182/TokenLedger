@@ -84,6 +84,7 @@ def integration_config() -> TokenLedgerConfig:
         batch_size=10,
         flush_interval_seconds=0.1,
         sample_rate=1.0,
+        schema_name="public",  # Use public schema for integration tests
     )
 
 
@@ -99,6 +100,7 @@ def async_integration_config() -> TokenLedgerConfig:
         batch_size=10,
         flush_interval_seconds=0.1,
         sample_rate=1.0,
+        schema_name="public",  # Use public schema for integration tests
     )
 
 
