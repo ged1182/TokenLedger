@@ -14,6 +14,11 @@ from typing import Any
 logger = logging.getLogger("tokenledger.migrations")
 
 
+def _is_tokenledger_alembic_dir(path: Path) -> bool:
+    """Check if a directory is a valid TokenLedger alembic migrations directory."""
+    return path.is_dir() and (path / "env.py").is_file() and (path / "versions").is_dir()
+
+
 def get_alembic_config(database_url: str | None = None) -> Any:
     """
     Create an Alembic Config object for programmatic usage.
@@ -28,21 +33,23 @@ def get_alembic_config(database_url: str | None = None) -> Any:
 
     # Find the alembic directory (shipped with the package or in repo root)
     package_dir = Path(__file__).parent.parent  # tokenledger/
-    repo_root = package_dir.parent  # TokenLedger/
+    repo_root = package_dir.parent  # TokenLedger/ (or site-packages/ when installed)
 
-    # Check for alembic directory in repo root (development) or package (installed)
-    alembic_dir = repo_root / "alembic"
-    alembic_ini = repo_root / "alembic.ini"
+    # Check package-relative path FIRST (for installed packages)
+    # This avoids collision with site-packages/alembic (the alembic package itself)
+    alembic_dir = package_dir / "alembic"
+    alembic_ini = package_dir / "alembic.ini"
 
-    if not alembic_dir.exists():
-        # Try package-relative path (for installed packages)
-        alembic_dir = package_dir / "alembic"
-        alembic_ini = package_dir / "alembic.ini"
+    if not _is_tokenledger_alembic_dir(alembic_dir):
+        # Fall back to repo root (for development)
+        alembic_dir = repo_root / "alembic"
+        alembic_ini = repo_root / "alembic.ini"
 
-    if not alembic_dir.exists():
+    if not _is_tokenledger_alembic_dir(alembic_dir):
         raise FileNotFoundError(
             f"Alembic migrations directory not found. "
-            f"Checked: {repo_root / 'alembic'} and {package_dir / 'alembic'}"
+            f"Checked: {package_dir / 'alembic'} and {repo_root / 'alembic'}. "
+            f"Directory must contain env.py and versions/ subdirectory."
         )
 
     # Create config from alembic.ini if it exists, otherwise programmatically
