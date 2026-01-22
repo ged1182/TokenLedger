@@ -364,3 +364,160 @@ class TestAsyncContextManager:
             assert get_attribution_context() == original
 
         asyncio.run(test_coro())
+
+
+class TestPersistentMode:
+    """Tests for persistent mode in attribution context manager."""
+
+    def test_persistent_mode_keeps_context_after_exit(self) -> None:
+        """Test that persistent mode keeps context after context manager exits."""
+        from tokenledger.context import clear_attribution
+
+        with attribution(user_id="persistent_user", feature="stream", persistent=True):
+            ctx = get_attribution_context()
+            assert ctx is not None
+            assert ctx.user_id == "persistent_user"
+
+        # Context should still be active after exit
+        ctx = get_attribution_context()
+        assert ctx is not None
+        assert ctx.user_id == "persistent_user"
+        assert ctx.feature == "stream"
+
+        # Clean up
+        clear_attribution()
+
+        # Now context should be cleared
+        assert get_attribution_context() is None
+
+    def test_non_persistent_mode_clears_context(self) -> None:
+        """Test that non-persistent mode clears context on exit."""
+        original = get_attribution_context()
+
+        with attribution(user_id="temp_user"):
+            ctx = get_attribution_context()
+            assert ctx is not None
+            assert ctx.user_id == "temp_user"
+
+        # Context should be restored after exit
+        assert get_attribution_context() == original
+
+    def test_async_persistent_mode(self) -> None:
+        """Test persistent mode with async context manager."""
+        from tokenledger.context import clear_attribution
+
+        async def test_coro():
+            async with attribution(
+                user_id="async_persistent", feature="async_stream", persistent=True
+            ):
+                ctx = get_attribution_context()
+                assert ctx is not None
+                assert ctx.user_id == "async_persistent"
+
+            # Context should still be active
+            ctx = get_attribution_context()
+            assert ctx is not None
+            assert ctx.user_id == "async_persistent"
+
+            # Simulate stream consumption
+            await asyncio.sleep(0)
+
+            # Context should still be active
+            ctx = get_attribution_context()
+            assert ctx is not None
+            assert ctx.user_id == "async_persistent"
+
+            # Clean up
+            clear_attribution()
+            assert get_attribution_context() is None
+
+        asyncio.run(test_coro())
+
+    def test_persistent_mode_with_nested_contexts(self) -> None:
+        """Test persistent mode doesn't affect nested contexts."""
+        from tokenledger.context import clear_attribution
+
+        with attribution(user_id="outer", persistent=True):
+            with attribution(feature="inner"):  # Not persistent
+                ctx = get_attribution_context()
+                assert ctx is not None
+                assert ctx.user_id == "outer"
+                assert ctx.feature == "inner"
+
+            # Inner context should be cleaned up, but outer persists
+            ctx = get_attribution_context()
+            assert ctx is not None
+            assert ctx.user_id == "outer"
+            # Note: Due to how merge works, feature will be None after inner exits
+            # because we restore to the previous context
+
+        # Outer context should still be active (persistent)
+        ctx = get_attribution_context()
+        assert ctx is not None
+        assert ctx.user_id == "outer"
+
+        clear_attribution()
+
+
+class TestClearAttribution:
+    """Tests for clear_attribution function."""
+
+    def test_clear_attribution_clears_context(self) -> None:
+        """Test that clear_attribution clears the current context."""
+        from tokenledger.context import clear_attribution
+
+        # Set some context
+        with attribution(user_id="test_user", persistent=True):
+            pass
+
+        assert get_attribution_context() is not None
+
+        clear_attribution()
+
+        assert get_attribution_context() is None
+
+    def test_clear_attribution_when_no_context(self) -> None:
+        """Test that clear_attribution is safe when no context exists."""
+        from tokenledger.context import clear_attribution
+
+        # Ensure no context
+        assert get_attribution_context() is None
+
+        # Should not raise
+        clear_attribution()
+
+        assert get_attribution_context() is None
+
+
+class TestContextWarning:
+    """Tests for attribution context warning detection."""
+
+    def test_warning_check_when_context_recently_cleared(self, caplog) -> None:
+        """Test that warning is logged when context was recently cleared."""
+        import logging
+
+        from tokenledger.context import check_attribution_context_warning
+
+        # Set and then clear context
+        with attribution(user_id="test_user"):
+            pass  # Context is set then cleared on exit
+
+        # Check should potentially log a warning
+        with caplog.at_level(logging.WARNING, logger="tokenledger.context"):
+            check_attribution_context_warning()
+
+        # Note: The warning may or may not appear depending on timing
+        # This test mainly verifies the function doesn't raise
+
+    def test_no_warning_when_context_active(self, caplog) -> None:
+        """Test that no warning is logged when context is active."""
+        import logging
+
+        from tokenledger.context import check_attribution_context_warning
+
+        with attribution(user_id="test_user"):
+            with caplog.at_level(logging.WARNING, logger="tokenledger.context"):
+                check_attribution_context_warning()
+
+            # Should not log any warnings
+            assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 0

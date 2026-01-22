@@ -7,13 +7,25 @@ Attribution context flows automatically through async code and thread boundaries
 
 from __future__ import annotations
 
+import logging
+import time
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from typing import Any
 
+logger = logging.getLogger("tokenledger.context")
+
 # Context variable for attribution
 _attribution_context: ContextVar[AttributionContext | None] = ContextVar(
     "tokenledger_attribution", default=None
+)
+
+# Track when context was last set/cleared for debugging
+_last_context_set_time: ContextVar[float | None] = ContextVar(
+    "tokenledger_last_context_set", default=None
+)
+_last_context_cleared_time: ContextVar[float | None] = ContextVar(
+    "tokenledger_last_context_cleared", default=None
 )
 
 
@@ -115,6 +127,8 @@ def set_attribution_context(ctx: AttributionContext | None) -> Token[Attribution
     Returns:
         Token that can be used to reset the context
     """
+    if ctx is not None:
+        _last_context_set_time.set(time.monotonic())
     return _attribution_context.set(ctx)
 
 
@@ -125,7 +139,62 @@ def reset_attribution_context(token: Token[AttributionContext | None]) -> None:
     Args:
         token: Token from a previous set_attribution_context call
     """
+    _last_context_cleared_time.set(time.monotonic())
     _attribution_context.reset(token)
+
+
+def clear_attribution() -> None:
+    """
+    Clear the current attribution context.
+
+    Use this to explicitly clear the context when using persistent mode
+    or when you no longer need attribution to apply to subsequent calls.
+
+    Example:
+        # Set persistent context for streaming
+        with attribution(user_id="user123", persistent=True):
+            response = await framework.stream(...)
+
+        async for chunk in response:
+            yield chunk
+
+        # Explicitly clear when done
+        tokenledger.clear_attribution()
+    """
+    _last_context_cleared_time.set(time.monotonic())
+    _attribution_context.set(None)
+
+
+def check_attribution_context_warning() -> None:
+    """
+    Check if attribution context may have been lost and log a warning.
+
+    This is called internally when an LLM event is recorded with no
+    attribution context. If a context was recently set and then cleared,
+    this may indicate the streaming/lazy response issue.
+    """
+    ctx = get_attribution_context()
+    if ctx is not None:
+        return  # Context exists, no warning needed
+
+    set_time = _last_context_set_time.get()
+    cleared_time = _last_context_cleared_time.get()
+
+    if set_time is not None and cleared_time is not None:
+        # Context was set then cleared recently
+        time_since_set = time.monotonic() - set_time
+        time_since_cleared = time.monotonic() - cleared_time
+
+        # If context was set recently (within 5 seconds) and then cleared,
+        # this may indicate the streaming issue
+        if time_since_set < 5.0 and time_since_cleared < time_since_set:
+            logger.warning(
+                "LLM event recorded with no attribution context. "
+                f"A context was set {time_since_set:.1f}s ago but cleared {time_since_cleared:.1f}s ago. "
+                "If using streaming/lazy responses, use `persistent=True` or "
+                "`set_attribution_context()` directly. "
+                "See: https://github.com/ged1182/TokenLedger#streaming-with-attribution"
+            )
 
 
 class attribution:
@@ -155,6 +224,30 @@ class attribution:
                 # Both team, feature, and user_id are set
                 ...
 
+    Persistent mode for streaming/lazy responses:
+        Many LLM frameworks return lazy/streaming responses where the actual API
+        call happens when you iterate over the response, not when you call the
+        method. In this case, the context manager may exit before the API call:
+
+        # PROBLEM: Context exits before stream is consumed
+        async with attribution(user_id="user123"):
+            response = await framework.stream(...)  # Returns lazy response
+        # Context exits here!
+        async for chunk in response:  # API call happens here, no context!
+            yield chunk
+
+        # SOLUTION: Use persistent=True
+        async with attribution(user_id="user123", persistent=True):
+            response = await framework.stream(...)
+        async for chunk in response:  # Context still active!
+            yield chunk
+        clear_attribution()  # Explicitly clear when done
+
+    Args:
+        persistent: If True, the context will NOT be automatically cleared
+            when the context manager exits. You must call clear_attribution()
+            manually when done. Useful for streaming/lazy responses.
+
     Note: For async code, either `with` or `async with` will work correctly.
     The async form is provided for API consistency and to make async intent explicit.
     """
@@ -171,6 +264,7 @@ class attribution:
         team: str | None = None,
         project: str | None = None,
         cost_center: str | None = None,
+        persistent: bool = False,
         **metadata_extra: Any,
     ) -> None:
         self._context = AttributionContext(
@@ -186,6 +280,7 @@ class attribution:
             metadata_extra=metadata_extra,
         )
         self._token: Token[AttributionContext | None] | None = None
+        self._persistent = persistent
 
     def _enter(self) -> AttributionContext:
         """Common enter logic for both sync and async context managers."""
@@ -198,6 +293,10 @@ class attribution:
 
     def _exit(self) -> None:
         """Common exit logic for both sync and async context managers."""
+        if self._persistent:
+            # In persistent mode, don't clear the context automatically
+            # User must call clear_attribution() when done
+            return
         if self._token is not None:
             reset_attribution_context(self._token)
             self._token = None

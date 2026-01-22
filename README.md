@@ -145,6 +145,31 @@ GROUP BY feature, team
 ORDER BY cost DESC;
 ```
 
+### Streaming with Attribution
+
+When using streaming/lazy responses (common with frameworks like pydantic-ai, LangChain),
+the LLM API call may happen *after* the context manager exits. Use `persistent=True` mode:
+
+```python
+from tokenledger import attribution, clear_attribution
+
+# Problem: Context exits before stream is consumed
+async with attribution(user_id="user123"):
+    response = await framework.stream(...)  # Returns lazy response
+# Context exits here!
+async for chunk in response:  # API call happens here, context is gone!
+    yield chunk
+
+# Solution: Use persistent mode
+async with attribution(user_id="user123", feature="chat", persistent=True):
+    response = await framework.stream(...)
+
+async for chunk in response:  # Context still active!
+    yield chunk
+
+clear_attribution()  # Explicitly clear when done
+```
+
 ## 📊 Dashboard
 
 TokenLedger includes a beautiful React dashboard:
