@@ -134,7 +134,230 @@ def _get_response_preview(response: Any, max_length: int = 500) -> str | None:
     return None
 
 
-def _wrap_chat_completions_create(original_method: Callable) -> Callable:
+# =============================================================================
+# Streaming Support
+# =============================================================================
+
+
+class TrackedStreamIterator:
+    """Wrapper for sync OpenAI streaming responses that tracks token usage."""
+
+    def __init__(
+        self,
+        stream: Any,
+        event: LLMEvent,
+        start_time: float,
+        tracker: Any,
+        model: str,
+    ):
+        self._stream = stream
+        self._event = event
+        self._start_time = start_time
+        self._tracker = tracker
+        self._model = model
+        self._response_text: list[str] = []
+        self._tracked = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            chunk = next(self._stream)
+            self._process_chunk(chunk)
+            return chunk
+        except StopIteration:
+            self._finalize()
+            raise
+        except Exception as e:
+            self._finalize_error(e)
+            raise
+
+    def _process_chunk(self, chunk: Any) -> None:
+        """Extract content and usage from a streaming chunk."""
+        # Extract text content from delta
+        choices = getattr(chunk, "choices", [])
+        if choices:
+            delta = getattr(choices[0], "delta", None)
+            if delta:
+                content = getattr(delta, "content", None)
+                if content:
+                    self._response_text.append(content)
+
+        # Extract model from chunk if available
+        model = getattr(chunk, "model", None)
+        if model:
+            self._event.model = model
+
+        # Extract usage if present (usually in final chunk with stream_options)
+        usage = getattr(chunk, "usage", None)
+        if usage:
+            self._event.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            self._event.output_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+            # Handle cached tokens
+            prompt_tokens_details = getattr(usage, "prompt_tokens_details", None)
+            if prompt_tokens_details:
+                self._event.cached_tokens = getattr(prompt_tokens_details, "cached_tokens", 0) or 0
+
+    def _finalize(self) -> None:
+        """Finalize tracking when stream completes successfully."""
+        if self._tracked:
+            return
+        self._tracked = True
+
+        self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+        self._event.total_tokens = (self._event.input_tokens or 0) + (
+            self._event.output_tokens or 0
+        )
+        self._event.status = "success"
+
+        # Set response preview
+        if self._response_text:
+            full_text = "".join(self._response_text)
+            self._event.response_preview = full_text[:500]
+
+        # Calculate cost
+        from ..pricing import calculate_cost
+
+        self._event.cost_usd = calculate_cost(
+            self._event.model,
+            self._event.input_tokens or 0,
+            self._event.output_tokens or 0,
+            self._event.cached_tokens or 0,
+            "openai",
+        )
+
+        self._tracker.track(self._event)
+
+    def _finalize_error(self, error: Exception) -> None:
+        """Finalize tracking when stream errors."""
+        if self._tracked:
+            return
+        self._tracked = True
+
+        self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+        self._event.status = "error"
+        self._event.error_type = type(error).__name__
+        self._event.error_message = str(error)[:1000]
+        self._tracker.track(self._event)
+
+    # Proxy other methods to underlying stream
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
+
+
+class AsyncTrackedStreamIterator:
+    """Wrapper for async OpenAI streaming responses that tracks token usage."""
+
+    def __init__(
+        self,
+        stream: Any,
+        event: LLMEvent,
+        start_time: float,
+        tracker: Any,
+        model: str,
+    ):
+        self._stream = stream
+        self._event = event
+        self._start_time = start_time
+        self._tracker = tracker
+        self._model = model
+        self._response_text: list[str] = []
+        self._tracked = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            chunk = await self._stream.__anext__()
+            self._process_chunk(chunk)
+            return chunk
+        except StopAsyncIteration:
+            self._finalize()
+            raise
+        except Exception as e:
+            self._finalize_error(e)
+            raise
+
+    def _process_chunk(self, chunk: Any) -> None:
+        """Extract content and usage from a streaming chunk."""
+        # Extract text content from delta
+        choices = getattr(chunk, "choices", [])
+        if choices:
+            delta = getattr(choices[0], "delta", None)
+            if delta:
+                content = getattr(delta, "content", None)
+                if content:
+                    self._response_text.append(content)
+
+        # Extract model from chunk if available
+        model = getattr(chunk, "model", None)
+        if model:
+            self._event.model = model
+
+        # Extract usage if present (usually in final chunk with stream_options)
+        usage = getattr(chunk, "usage", None)
+        if usage:
+            self._event.input_tokens = getattr(usage, "prompt_tokens", 0) or 0
+            self._event.output_tokens = getattr(usage, "completion_tokens", 0) or 0
+
+            # Handle cached tokens
+            prompt_tokens_details = getattr(usage, "prompt_tokens_details", None)
+            if prompt_tokens_details:
+                self._event.cached_tokens = getattr(prompt_tokens_details, "cached_tokens", 0) or 0
+
+    def _finalize(self) -> None:
+        """Finalize tracking when stream completes successfully."""
+        if self._tracked:
+            return
+        self._tracked = True
+
+        self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+        self._event.total_tokens = (self._event.input_tokens or 0) + (
+            self._event.output_tokens or 0
+        )
+        self._event.status = "success"
+
+        # Set response preview
+        if self._response_text:
+            full_text = "".join(self._response_text)
+            self._event.response_preview = full_text[:500]
+
+        # Calculate cost
+        from ..pricing import calculate_cost
+
+        self._event.cost_usd = calculate_cost(
+            self._event.model,
+            self._event.input_tokens or 0,
+            self._event.output_tokens or 0,
+            self._event.cached_tokens or 0,
+            "openai",
+        )
+
+        self._tracker.track(self._event)
+
+    def _finalize_error(self, error: Exception) -> None:
+        """Finalize tracking when stream errors."""
+        if self._tracked:
+            return
+        self._tracked = True
+
+        self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+        self._event.status = "error"
+        self._event.error_type = type(error).__name__
+        self._event.error_message = str(error)[:1000]
+        self._tracker.track(self._event)
+
+    # Proxy other methods to underlying stream
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
+
+
+def _wrap_chat_completions_create(
+    original_method: Callable, track_streaming: bool = True
+) -> Callable:
     """Wrap the chat.completions.create method"""
 
     @functools.wraps(original_method)
@@ -146,11 +369,15 @@ def _wrap_chat_completions_create(original_method: Callable) -> Callable:
         model = kwargs.get("model", "")
         messages = kwargs.get("messages", [])
         user = kwargs.get("user")
+        is_streaming = kwargs.get("stream", False)
+
+        # Determine request type based on streaming
+        request_type = "chat_stream" if is_streaming else "chat"
 
         event = LLMEvent.fast_construct(
             provider="openai",
             model=model,
-            request_type="chat",
+            request_type=request_type,
             endpoint="/v1/chat/completions",
             user_id=user,
             request_preview=_get_request_preview(messages),
@@ -162,6 +389,17 @@ def _wrap_chat_completions_create(original_method: Callable) -> Callable:
         try:
             response = original_method(*args, **kwargs)
 
+            # Handle streaming responses
+            if is_streaming and track_streaming:
+                return TrackedStreamIterator(
+                    stream=response,
+                    event=event,
+                    start_time=start_time,
+                    tracker=tracker,
+                    model=model,
+                )
+
+            # Non-streaming response handling
             # Calculate duration
             event.duration_ms = (time.perf_counter() - start_time) * 1000
 
@@ -201,7 +439,9 @@ def _wrap_chat_completions_create(original_method: Callable) -> Callable:
     return wrapper
 
 
-def _wrap_async_chat_completions_create(original_method: Callable) -> Callable:
+def _wrap_async_chat_completions_create(
+    original_method: Callable, track_streaming: bool = True
+) -> Callable:
     """Wrap the async chat.completions.create method"""
 
     @functools.wraps(original_method)
@@ -212,11 +452,15 @@ def _wrap_async_chat_completions_create(original_method: Callable) -> Callable:
         model = kwargs.get("model", "")
         messages = kwargs.get("messages", [])
         user = kwargs.get("user")
+        is_streaming = kwargs.get("stream", False)
+
+        # Determine request type based on streaming
+        request_type = "chat_stream" if is_streaming else "chat"
 
         event = LLMEvent.fast_construct(
             provider="openai",
             model=model,
-            request_type="chat",
+            request_type=request_type,
             endpoint="/v1/chat/completions",
             user_id=user,
             request_preview=_get_request_preview(messages),
@@ -228,6 +472,17 @@ def _wrap_async_chat_completions_create(original_method: Callable) -> Callable:
         try:
             response = await original_method(*args, **kwargs)
 
+            # Handle streaming responses
+            if is_streaming and track_streaming:
+                return AsyncTrackedStreamIterator(
+                    stream=response,
+                    event=event,
+                    start_time=start_time,
+                    tracker=tracker,
+                    model=model,
+                )
+
+            # Non-streaming response handling
             event.duration_ms = (time.perf_counter() - start_time) * 1000
 
             tokens = _extract_tokens_from_response(response)
@@ -1397,6 +1652,7 @@ def patch_openai(
     track_audio: bool = True,
     track_images: bool = True,
     track_batch: bool = True,
+    track_streaming: bool = True,
 ) -> None:
     """
     Patch the OpenAI SDK to automatically track all API calls.
@@ -1408,6 +1664,7 @@ def patch_openai(
         track_audio: Whether to track audio API calls (transcription, translation, TTS)
         track_images: Whether to track image API calls (generate, edit, variations)
         track_batch: Whether to track batch API calls (50% discount batch processing)
+        track_streaming: Whether to track streaming calls (stream=True)
 
     Example:
         >>> import openai
@@ -1421,6 +1678,14 @@ def patch_openai(
         ...     model="gpt-4o",
         ...     messages=[{"role": "user", "content": "Hello!"}]
         ... )
+        >>>
+        >>> # Streaming calls are also tracked
+        >>> for chunk in openai.chat.completions.create(
+        ...     model="gpt-4o",
+        ...     messages=[{"role": "user", "content": "Hello!"}],
+        ...     stream=True
+        ... ):
+        ...     print(chunk.choices[0].delta.content, end="")
     """
     global _patched
 
@@ -1437,7 +1702,7 @@ def patch_openai(
         # Patch specific client instance
         _original_methods["instance_chat_create"] = client.chat.completions.create
         client.chat.completions.create = _wrap_chat_completions_create(
-            client.chat.completions.create
+            client.chat.completions.create, track_streaming=track_streaming
         )
 
         if track_embeddings and hasattr(client, "embeddings"):
@@ -1452,16 +1717,16 @@ def patch_openai(
         # Patch the class methods
         from openai.resources.chat import completions as chat_completions
 
-        # Sync chat completions
+        # Sync chat completions (with streaming support)
         _original_methods["chat_create"] = chat_completions.Completions.create
         chat_completions.Completions.create = _wrap_chat_completions_create(
-            chat_completions.Completions.create
+            chat_completions.Completions.create, track_streaming=track_streaming
         )
 
-        # Async chat completions
+        # Async chat completions (with streaming support)
         _original_methods["async_chat_create"] = chat_completions.AsyncCompletions.create
         chat_completions.AsyncCompletions.create = _wrap_async_chat_completions_create(
-            chat_completions.AsyncCompletions.create
+            chat_completions.AsyncCompletions.create, track_streaming=track_streaming
         )
 
         if track_embeddings:
