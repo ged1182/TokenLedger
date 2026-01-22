@@ -147,6 +147,15 @@ Complete setup with middleware, async tracking, and database optimization.
 
 ### 1. Database Setup
 
+**Database Driver Selection:**
+
+TokenLedger supports two database drivers:
+
+- **psycopg2** (default): Best for sync code or when using `async_mode=True` (background thread). Install with `pip install tokenledger[postgres]`
+- **asyncpg**: Recommended for purely async applications using `async`/`await`. Install with `pip install tokenledger[asyncpg]`
+
+> **Note:** `async_mode=True` (the default) uses a background thread for non-blocking writes with psycopg2. This is different from true async I/O which requires asyncpg.
+
 Run the migrations to create tables with proper indexes:
 
 ```bash
@@ -155,12 +164,13 @@ alembic upgrade head
 
 # Or manually run SQL
 psql $DATABASE_URL < migrations/001_initial.sql
+psql $DATABASE_URL < migrations/002_add_attribution_columns.sql
 ```
 
 The schema includes:
 - `token_ledger_events` table with all attribution columns
-- Optimized indexes for time-series queries
-- Helper views: `token_ledger_daily_costs`, `token_ledger_user_costs`
+- Optimized indexes for time-series and attribution queries
+- Helper views: `token_ledger_daily_costs`, `token_ledger_user_costs`, `token_ledger_team_costs`, `token_ledger_cost_center_costs`
 
 ### 2. FastAPI Integration
 

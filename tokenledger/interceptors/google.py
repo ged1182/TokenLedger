@@ -383,8 +383,8 @@ def _wrap_async_generate_content_stream(original_method: Callable) -> Callable:
         # Apply attribution context
         _apply_attribution_context(event)
 
-        # Get the async stream iterator
-        stream_iterator = original_method(self, model=model, contents=contents, **kwargs)
+        # Get the async stream iterator - must await since original_method is async
+        stream_iterator = await original_method(self, model=model, contents=contents, **kwargs)
 
         class AsyncTrackedStreamIterator:
             def __init__(self, stream, event, start_time, tracker):
