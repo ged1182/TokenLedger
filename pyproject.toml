@@ -87,6 +87,13 @@ tokenledger = "tokenledger.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["tokenledger"]
+# Include non-Python files in the wheel
+artifacts = [
+    "tokenledger/alembic.ini",
+    "tokenledger/alembic/*.py",
+    "tokenledger/alembic/*.mako",
+    "tokenledger/alembic/versions/*.py",
+]
 
 [tool.hatch.build.targets.sdist]
 include = ["/tokenledger", "/alembic", "/alembic.ini", "/README.md", "/LICENSE", "/migrations", "/CHANGELOG.md"]
@@ -108,6 +115,8 @@ exclude = [
     "__pycache__",
     "build",
     "dist",
+    "alembic",
+    "tokenledger/alembic",
 ]
 
 [tool.ruff.lint]
