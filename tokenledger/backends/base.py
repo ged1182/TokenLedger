@@ -67,6 +67,14 @@ class BaseStorageBackend(ABC):
         "metadata",
         "request_preview",
         "response_preview",
+        # Attribution fields
+        "feature",
+        "page",
+        "component",
+        "team",
+        "project",
+        "cost_center",
+        "metadata_extra",
     )
 
     def __init__(self) -> None:

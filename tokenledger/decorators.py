@@ -9,7 +9,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from .tracker import LLMEvent, get_tracker
+from .models import LLMEvent
+from .tracker import get_tracker
 
 
 def track_llm(

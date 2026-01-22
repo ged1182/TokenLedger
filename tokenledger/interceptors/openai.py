@@ -9,13 +9,44 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from ..tracker import LLMEvent, get_tracker
+from ..context import get_attribution_context
+from ..models import LLMEvent
+from ..tracker import get_tracker
 
 logger = logging.getLogger("tokenledger.openai")
 
 # Store original methods for unpatching
 _original_methods: dict[str, Callable] = {}
 _patched = False
+
+
+def _apply_attribution_context(event: LLMEvent) -> None:
+    """Apply current attribution context to an event."""
+    ctx = get_attribution_context()
+    if ctx is None:
+        return
+
+    if ctx.user_id is not None and event.user_id is None:
+        event.user_id = ctx.user_id
+    if ctx.session_id is not None and event.session_id is None:
+        event.session_id = ctx.session_id
+    if ctx.organization_id is not None and event.organization_id is None:
+        event.organization_id = ctx.organization_id
+    if ctx.feature is not None and event.feature is None:
+        event.feature = ctx.feature
+    if ctx.page is not None and event.page is None:
+        event.page = ctx.page
+    if ctx.component is not None and event.component is None:
+        event.component = ctx.component
+    if ctx.team is not None and event.team is None:
+        event.team = ctx.team
+    if ctx.project is not None and event.project is None:
+        event.project = ctx.project
+    if ctx.cost_center is not None and event.cost_center is None:
+        event.cost_center = ctx.cost_center
+    if ctx.metadata_extra:
+        existing_extra = event.metadata_extra or {}
+        event.metadata_extra = {**ctx.metadata_extra, **existing_extra}
 
 
 def _extract_tokens_from_response(response: Any) -> dict[str, int]:
@@ -94,7 +125,7 @@ def _wrap_chat_completions_create(original_method: Callable) -> Callable:
         messages = kwargs.get("messages", [])
         user = kwargs.get("user")
 
-        event = LLMEvent(
+        event = LLMEvent.fast_construct(
             provider="openai",
             model=model,
             request_type="chat",
@@ -102,6 +133,9 @@ def _wrap_chat_completions_create(original_method: Callable) -> Callable:
             user_id=user,
             request_preview=_get_request_preview(messages),
         )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
 
         try:
             response = original_method(*args, **kwargs)
@@ -157,7 +191,7 @@ def _wrap_async_chat_completions_create(original_method: Callable) -> Callable:
         messages = kwargs.get("messages", [])
         user = kwargs.get("user")
 
-        event = LLMEvent(
+        event = LLMEvent.fast_construct(
             provider="openai",
             model=model,
             request_type="chat",
@@ -165,6 +199,9 @@ def _wrap_async_chat_completions_create(original_method: Callable) -> Callable:
             user_id=user,
             request_preview=_get_request_preview(messages),
         )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
 
         try:
             response = await original_method(*args, **kwargs)
@@ -212,13 +249,16 @@ def _wrap_embeddings_create(original_method: Callable) -> Callable:
         model = kwargs.get("model", "")
         user = kwargs.get("user")
 
-        event = LLMEvent(
+        event = LLMEvent.fast_construct(
             provider="openai",
             model=model,
             request_type="embedding",
             endpoint="/v1/embeddings",
             user_id=user,
         )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
 
         try:
             response = original_method(*args, **kwargs)

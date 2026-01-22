@@ -36,7 +36,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pydantic>=2.0.0,<3"]
 
 [project.optional-dependencies]
 postgres = ["psycopg2-binary>=2.9.0", "alembic>=1.13.0"]
