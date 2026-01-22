@@ -486,9 +486,770 @@ def _wrap_async_responses_create(original_method: Callable) -> Callable:
     return wrapper
 
 
+# =============================================================================
+# Audio API Wrappers
+# =============================================================================
+
+
+def _wrap_audio_transcription_create(original_method: Callable) -> Callable:
+    """Wrap the audio.transcriptions.create method (billed per minute)"""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "whisper-1")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="transcription",
+            endpoint="/v1/audio/transcriptions",
+            user_id=user,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            # Get transcribed text as response preview
+            if hasattr(response, "text"):
+                text = response.text
+                event.response_preview = text[:500] if len(text) > 500 else text
+
+            # Audio transcription is billed per minute, cost calculated separately
+            from ..pricing import calculate_audio_cost
+
+            event.cost_usd = calculate_audio_cost(model)
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_audio_transcription_create(original_method: Callable) -> Callable:
+    """Wrap the async audio.transcriptions.create method"""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "whisper-1")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="transcription",
+            endpoint="/v1/audio/transcriptions",
+            user_id=user,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            if hasattr(response, "text"):
+                text = response.text
+                event.response_preview = text[:500] if len(text) > 500 else text
+
+            from ..pricing import calculate_audio_cost
+
+            event.cost_usd = calculate_audio_cost(model)
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_audio_translation_create(original_method: Callable) -> Callable:
+    """Wrap the audio.translations.create method (billed per minute)"""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "whisper-1")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="translation",
+            endpoint="/v1/audio/translations",
+            user_id=user,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            if hasattr(response, "text"):
+                text = response.text
+                event.response_preview = text[:500] if len(text) > 500 else text
+
+            from ..pricing import calculate_audio_cost
+
+            event.cost_usd = calculate_audio_cost(model)
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_audio_translation_create(original_method: Callable) -> Callable:
+    """Wrap the async audio.translations.create method"""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "whisper-1")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="translation",
+            endpoint="/v1/audio/translations",
+            user_id=user,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            if hasattr(response, "text"):
+                text = response.text
+                event.response_preview = text[:500] if len(text) > 500 else text
+
+            from ..pricing import calculate_audio_cost
+
+            event.cost_usd = calculate_audio_cost(model)
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_audio_speech_create(original_method: Callable) -> Callable:
+    """Wrap the audio.speech.create method (billed per character)"""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "tts-1")
+        input_text = kwargs.get("input", "")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="speech",
+            endpoint="/v1/audio/speech",
+            user_id=user,
+            request_preview=input_text[:500] if len(input_text) > 500 else input_text,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            # TTS is billed per character
+            from ..pricing import calculate_tts_cost
+
+            event.cost_usd = calculate_tts_cost(model, len(input_text))
+
+            # Store character count in metadata
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["character_count"] = len(input_text)
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_audio_speech_create(original_method: Callable) -> Callable:
+    """Wrap the async audio.speech.create method"""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "tts-1")
+        input_text = kwargs.get("input", "")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="speech",
+            endpoint="/v1/audio/speech",
+            user_id=user,
+            request_preview=input_text[:500] if len(input_text) > 500 else input_text,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            from ..pricing import calculate_tts_cost
+
+            event.cost_usd = calculate_tts_cost(model, len(input_text))
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["character_count"] = len(input_text)
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+# =============================================================================
+# Image API Wrappers
+# =============================================================================
+
+
+def _wrap_images_generate(original_method: Callable) -> Callable:
+    """Wrap the images.generate method (billed per image)"""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "dall-e-2")
+        prompt = kwargs.get("prompt", "")
+        n = kwargs.get("n", 1)
+        size = kwargs.get("size", "1024x1024")
+        quality = kwargs.get("quality", "standard")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="image_generation",
+            endpoint="/v1/images/generations",
+            user_id=user,
+            request_preview=prompt[:500] if len(prompt) > 500 else prompt,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            # Calculate image cost
+            from ..pricing import calculate_image_cost
+
+            event.cost_usd = calculate_image_cost(model, n, size, quality)
+
+            # Store image params in metadata
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["image_count"] = n
+            event.metadata_extra["image_size"] = size
+            event.metadata_extra["image_quality"] = quality
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_images_generate(original_method: Callable) -> Callable:
+    """Wrap the async images.generate method"""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "dall-e-2")
+        prompt = kwargs.get("prompt", "")
+        n = kwargs.get("n", 1)
+        size = kwargs.get("size", "1024x1024")
+        quality = kwargs.get("quality", "standard")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="image_generation",
+            endpoint="/v1/images/generations",
+            user_id=user,
+            request_preview=prompt[:500] if len(prompt) > 500 else prompt,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            from ..pricing import calculate_image_cost
+
+            event.cost_usd = calculate_image_cost(model, n, size, quality)
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["image_count"] = n
+            event.metadata_extra["image_size"] = size
+            event.metadata_extra["image_quality"] = quality
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_images_edit(original_method: Callable) -> Callable:
+    """Wrap the images.edit method (billed per image)"""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "dall-e-2")
+        prompt = kwargs.get("prompt", "")
+        n = kwargs.get("n", 1)
+        size = kwargs.get("size", "1024x1024")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="image_edit",
+            endpoint="/v1/images/edits",
+            user_id=user,
+            request_preview=prompt[:500] if len(prompt) > 500 else prompt,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            from ..pricing import calculate_image_cost
+
+            event.cost_usd = calculate_image_cost(model, n, size, "standard")
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["image_count"] = n
+            event.metadata_extra["image_size"] = size
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_images_edit(original_method: Callable) -> Callable:
+    """Wrap the async images.edit method"""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "dall-e-2")
+        prompt = kwargs.get("prompt", "")
+        n = kwargs.get("n", 1)
+        size = kwargs.get("size", "1024x1024")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="image_edit",
+            endpoint="/v1/images/edits",
+            user_id=user,
+            request_preview=prompt[:500] if len(prompt) > 500 else prompt,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            from ..pricing import calculate_image_cost
+
+            event.cost_usd = calculate_image_cost(model, n, size, "standard")
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["image_count"] = n
+            event.metadata_extra["image_size"] = size
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_images_create_variation(original_method: Callable) -> Callable:
+    """Wrap the images.create_variation method (billed per image)"""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "dall-e-2")
+        n = kwargs.get("n", 1)
+        size = kwargs.get("size", "1024x1024")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="image_variation",
+            endpoint="/v1/images/variations",
+            user_id=user,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            from ..pricing import calculate_image_cost
+
+            event.cost_usd = calculate_image_cost(model, n, size, "standard")
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["image_count"] = n
+            event.metadata_extra["image_size"] = size
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_images_create_variation(original_method: Callable) -> Callable:
+    """Wrap the async images.create_variation method"""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        model = kwargs.get("model", "dall-e-2")
+        n = kwargs.get("n", 1)
+        size = kwargs.get("size", "1024x1024")
+        user = kwargs.get("user")
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model=model,
+            request_type="image_variation",
+            endpoint="/v1/images/variations",
+            user_id=user,
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            from ..pricing import calculate_image_cost
+
+            event.cost_usd = calculate_image_cost(model, n, size, "standard")
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["image_count"] = n
+            event.metadata_extra["image_size"] = size
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+# =============================================================================
+# Patching Functions
+# =============================================================================
+
+
+def _patch_audio_apis() -> None:
+    """Patch OpenAI audio APIs (transcription, translation, speech)."""
+    try:
+        from openai.resources.audio import speech, transcriptions, translations
+
+        # Transcriptions
+        _original_methods["audio_transcriptions_create"] = transcriptions.Transcriptions.create
+        transcriptions.Transcriptions.create = _wrap_audio_transcription_create(
+            transcriptions.Transcriptions.create
+        )
+
+        _original_methods["async_audio_transcriptions_create"] = (
+            transcriptions.AsyncTranscriptions.create
+        )
+        transcriptions.AsyncTranscriptions.create = _wrap_async_audio_transcription_create(
+            transcriptions.AsyncTranscriptions.create
+        )
+
+        # Translations
+        _original_methods["audio_translations_create"] = translations.Translations.create
+        translations.Translations.create = _wrap_audio_translation_create(
+            translations.Translations.create
+        )
+
+        _original_methods["async_audio_translations_create"] = translations.AsyncTranslations.create
+        translations.AsyncTranslations.create = _wrap_async_audio_translation_create(
+            translations.AsyncTranslations.create
+        )
+
+        # Patch speech synthesis endpoint
+        _original_methods["audio_speech_create"] = speech.Speech.create
+        speech.Speech.create = _wrap_audio_speech_create(speech.Speech.create)
+
+        _original_methods["async_audio_speech_create"] = speech.AsyncSpeech.create
+        speech.AsyncSpeech.create = _wrap_async_audio_speech_create(speech.AsyncSpeech.create)
+
+        logger.debug("OpenAI audio APIs patched for tracking")
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"Could not patch audio APIs: {e}")
+
+
+def _patch_image_apis() -> None:
+    """Patch OpenAI image APIs (generate, edit, create_variation)."""
+    try:
+        from openai.resources import images
+
+        # Generate
+        _original_methods["images_generate"] = images.Images.generate
+        images.Images.generate = _wrap_images_generate(images.Images.generate)
+
+        _original_methods["async_images_generate"] = images.AsyncImages.generate
+        images.AsyncImages.generate = _wrap_async_images_generate(images.AsyncImages.generate)
+
+        # Edit
+        _original_methods["images_edit"] = images.Images.edit
+        images.Images.edit = _wrap_images_edit(images.Images.edit)
+
+        _original_methods["async_images_edit"] = images.AsyncImages.edit
+        images.AsyncImages.edit = _wrap_async_images_edit(images.AsyncImages.edit)
+
+        # Create variation
+        _original_methods["images_create_variation"] = images.Images.create_variation
+        images.Images.create_variation = _wrap_images_create_variation(
+            images.Images.create_variation
+        )
+
+        _original_methods["async_images_create_variation"] = images.AsyncImages.create_variation
+        images.AsyncImages.create_variation = _wrap_async_images_create_variation(
+            images.AsyncImages.create_variation
+        )
+
+        logger.debug("OpenAI image APIs patched for tracking")
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"Could not patch image APIs: {e}")
+
+
+def _unpatch_audio_apis() -> None:
+    """Unpatch OpenAI audio APIs."""
+    try:
+        from openai.resources.audio import speech, transcriptions, translations
+
+        if "audio_transcriptions_create" in _original_methods:
+            transcriptions.Transcriptions.create = _original_methods["audio_transcriptions_create"]
+        if "async_audio_transcriptions_create" in _original_methods:
+            transcriptions.AsyncTranscriptions.create = _original_methods[
+                "async_audio_transcriptions_create"
+            ]
+        if "audio_translations_create" in _original_methods:
+            translations.Translations.create = _original_methods["audio_translations_create"]
+        if "async_audio_translations_create" in _original_methods:
+            translations.AsyncTranslations.create = _original_methods[
+                "async_audio_translations_create"
+            ]
+        if "audio_speech_create" in _original_methods:
+            speech.Speech.create = _original_methods["audio_speech_create"]
+        if "async_audio_speech_create" in _original_methods:
+            speech.AsyncSpeech.create = _original_methods["async_audio_speech_create"]
+
+    except (ImportError, AttributeError):
+        pass
+
+
+def _unpatch_image_apis() -> None:
+    """Unpatch OpenAI image APIs."""
+    try:
+        from openai.resources import images
+
+        if "images_generate" in _original_methods:
+            images.Images.generate = _original_methods["images_generate"]
+        if "async_images_generate" in _original_methods:
+            images.AsyncImages.generate = _original_methods["async_images_generate"]
+        if "images_edit" in _original_methods:
+            images.Images.edit = _original_methods["images_edit"]
+        if "async_images_edit" in _original_methods:
+            images.AsyncImages.edit = _original_methods["async_images_edit"]
+        if "images_create_variation" in _original_methods:
+            images.Images.create_variation = _original_methods["images_create_variation"]
+        if "async_images_create_variation" in _original_methods:
+            images.AsyncImages.create_variation = _original_methods["async_images_create_variation"]
+
+    except (ImportError, AttributeError):
+        pass
+
+
 def patch_openai(
     client: Any | None = None,
     track_embeddings: bool = True,
+    track_audio: bool = True,
+    track_images: bool = True,
 ) -> None:
     """
     Patch the OpenAI SDK to automatically track all API calls.
@@ -497,6 +1258,8 @@ def patch_openai(
         client: Optional specific OpenAI client instance to patch.
                 If None, patches the default client class.
         track_embeddings: Whether to also track embedding calls
+        track_audio: Whether to track audio API calls (transcription, translation, TTS)
+        track_images: Whether to track image API calls (generate, edit, variations)
 
     Example:
         >>> import openai
@@ -577,6 +1340,14 @@ def patch_openai(
         except (ImportError, AttributeError) as e:
             logger.debug(f"Could not patch responses API: {e}")
 
+        # Patch audio APIs (transcription, translation, speech)
+        if track_audio:
+            _patch_audio_apis()
+
+        # Patch image APIs (generate, edit, variations)
+        if track_images:
+            _patch_image_apis()
+
     _patched = True
     logger.info("OpenAI SDK patched for tracking")
 
@@ -614,6 +1385,12 @@ def unpatch_openai() -> None:
 
         except (ImportError, AttributeError):
             pass
+
+        # Unpatch audio APIs
+        _unpatch_audio_apis()
+
+        # Unpatch image APIs
+        _unpatch_image_apis()
 
         _original_methods.clear()
         _patched = False
