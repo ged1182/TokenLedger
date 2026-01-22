@@ -7,9 +7,9 @@
 
 | Provider | SDK Version | Current Coverage | pydantic-ai Support | Status |
 |----------|-------------|------------------|---------------------|--------|
-| **OpenAI** | 2.15.0 | 85% (22/26) | ✅ Full | ✅ Production |
-| **Anthropic** | 0.76.0 | 90% (21/23) | ✅ Full | ✅ Production |
-| **Google** | 1.0.0+ | 80% (8/10) | ✅ Full | ✅ Production |
+| **OpenAI** | 2.15.0 | 88% (23/26) | ✅ Full | ✅ Production |
+| **Anthropic** | 0.76.0 | 92% (22/24) | ✅ Full | ✅ Production |
+| **Google** | 1.0.0+ | 85% (9/10) | ✅ Full | ✅ Production |
 
 ## Recent Updates
 
@@ -28,6 +28,11 @@
 - Added Gemini 3 preview, Gemini 2.5, Gemini 2.0 series
 - Added audio, TTS, and image pricing
 
+### ✅ Phase 4: Batch & Embedding APIs (COMPLETED)
+- OpenAI Batch API (`batches.create`) with 50% discount tracking
+- Anthropic Batch API (`messages.batches.create`)
+- Google Embeddings API (`models.embed_content`)
+
 ## Detailed Coverage by Provider
 
 ### OpenAI Coverage
@@ -45,7 +50,7 @@
 | | images.edit | ✅ | ✅ | ✅ | Per-image billing |
 | | images.create_variation | ✅ | ✅ | ✅ | Per-image billing |
 | **Video** | videos.create | ✅ | ✅ | ❌ | Sora, per-video |
-| **Batch** | batches.create | ✅ | ✅ | ❌ | 50% discount |
+| **Batch** | batches.create | ✅ | ✅ | ✅ | 50% discount |
 | **Fine-tune** | fine_tuning.jobs.create | ✅ | ✅ | ❌ | Training cost |
 
 ### Anthropic Coverage
@@ -55,7 +60,7 @@
 | **Standard** | messages.create | ✅ | ✅ | ✅ | Working |
 | | messages.stream | ✅ | ✅ | ✅ | Full streaming |
 | | messages.count_tokens | ✅ | ✅ | ❌ | Free, for auditing |
-| | messages.batches.create | ✅ | ✅ | ❌ | Batch processing |
+| | messages.batches.create | ✅ | ✅ | ✅ | Batch processing |
 | **Beta** | **beta.messages.create** | ✅ | ✅ | ✅ | **pydantic-ai compatible** |
 | | beta.messages.stream | ✅ | ✅ | ✅ | Beta streaming |
 | | beta.messages.count_tokens | ✅ | ✅ | ❌ | Beta token counting |
@@ -68,7 +73,7 @@
 |----------|-----|------|-------|---------|-------|
 | **Text** | models.generate_content | ✅ | ✅ | ✅ | Main generation |
 | | models.generate_content_stream | ✅ | ✅ | ⚠️ | Partial |
-| **Embeddings** | models.embed_content | ✅ | ✅ | ❌ | Per-token |
+| **Embeddings** | models.embed_content | ✅ | ✅ | ✅ | Per-token |
 | **Images** | models.generate_images | ✅ | ✅ | ❌ | Imagen models |
 | **Caching** | caches.create | ✅ | ✅ | ❌ | Discounted tokens |
 | **Batch** | batches.create | ✅ | ✅ | ❌ | Batch processing |
@@ -138,12 +143,11 @@
 
 ## Future Work
 
-### Phase 4: Complete Coverage (Planned)
+### Phase 5: Extended Coverage (Planned)
 - OpenAI Video API (Sora)
-- OpenAI Batch API
-- OpenAI Fine-tuning API
-- Google embeddings and batch APIs
-- Anthropic batch API
+- OpenAI Fine-tuning API (training cost tracking)
+- Google Batch API (batch processing)
+- Google streaming improvements
 
 ## References
 
