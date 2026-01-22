@@ -377,7 +377,7 @@ python -m tokenledger.server
 - [ ] Grafana integration
 - [ ] CLI for querying
 - [ ] More LLM providers (Mistral, Cohere)
-- [ ] Streaming cost tracking improvements
+- [ ] OpenAI streaming support (Anthropic & Google streaming complete)
 - [ ] TimescaleDB optimization guide
 
 ## 📜 License

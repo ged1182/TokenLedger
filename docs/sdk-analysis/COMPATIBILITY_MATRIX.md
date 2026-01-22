@@ -7,7 +7,7 @@
 
 | Provider | SDK Version | Current Coverage | pydantic-ai Support | Status |
 |----------|-------------|------------------|---------------------|--------|
-| **OpenAI** | 2.15.0 | 88% (23/26) | ✅ Full | ✅ Production |
+| **OpenAI** | 2.15.0 | 85% (23/27) | ✅ Full | ✅ Production |
 | **Anthropic** | 0.76.0 | 92% (22/24) | ✅ Full | ✅ Production |
 | **Google** | 1.0.0+ | 90% (9/10) | ✅ Full | ✅ Production |
 
@@ -45,6 +45,7 @@
 | Category | API | Sync | Async | Patched | Notes |
 |----------|-----|------|-------|---------|-------|
 | **Text** | chat.completions.create | ✅ | ✅ | ✅ | Working |
+| | chat.completions.create (stream) | ✅ | ✅ | ❌ | Planned |
 | | completions.create | ✅ | ✅ | ❌ | Legacy, low usage |
 | | **responses.create** | ✅ | ✅ | ✅ | **pydantic-ai compatible** |
 | **Embeddings** | embeddings.create | ✅ | ✅ | ✅ | Full support |
@@ -147,6 +148,9 @@
 | `pyproject.toml` | ✅ Updated | google-genai dependency |
 
 ## Future Work
+
+### Planned
+- OpenAI streaming support (`chat.completions.create` with `stream=True`)
 
 ### Deferred (No Timeline)
 - OpenAI Video API (Sora)
