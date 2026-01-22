@@ -77,22 +77,26 @@ def async_integration_config() -> TokenLedgerConfig:
 
 @pytest.fixture
 def clean_events_table(integration_database_url: str) -> Generator[None, None, None]:
-    """Clean the events table before and after each test."""
+    """Clean the events table before and after each test.
+
+    Drops and recreates the table to ensure schema is up-to-date.
+    """
     import psycopg2
 
-    def truncate() -> None:
+    def recreate_table() -> None:
         try:
             conn = psycopg2.connect(integration_database_url)
             with conn.cursor() as cur:
-                cur.execute("TRUNCATE TABLE token_ledger_events")
+                # Drop table to ensure schema is fresh
+                cur.execute("DROP TABLE IF EXISTS token_ledger_events CASCADE")
             conn.commit()
             conn.close()
         except Exception:
-            pass  # Table might not exist yet
+            pass
 
-    truncate()
+    recreate_table()
     yield
-    truncate()
+    recreate_table()
 
 
 @pytest.fixture
