@@ -77,8 +77,24 @@ tokenledger.patch_anthropic()
 
 client = anthropic.Anthropic()
 response = client.messages.create(
-    model="claude-3-5-sonnet-20241022",
+    model="claude-sonnet-4-5-latest",
     messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+### And Google Gemini
+
+```python
+import tokenledger
+from google import genai
+
+tokenledger.configure(database_url="postgresql://...")
+tokenledger.patch_google()
+
+client = genai.Client(api_key="...")
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents="Hello!"
 )
 ```
 
@@ -287,7 +303,8 @@ tokenledger/
 │   ├── server.py         # Dashboard API server
 │   └── interceptors/     # SDK patches
 │       ├── openai.py
-│       └── anthropic.py
+│       ├── anthropic.py
+│       └── google.py
 ├── dashboard/            # React dashboard
 ├── migrations/           # SQL migrations
 └── examples/             # Usage examples
@@ -295,23 +312,40 @@ tokenledger/
 
 ## 💰 Supported Models & Pricing
 
-TokenLedger includes up-to-date pricing for:
+TokenLedger includes up-to-date pricing (January 2026) for **74+ models** across 3 providers:
 
-**OpenAI:**
-- GPT-4o, GPT-4o-mini
-- GPT-4-turbo, GPT-4
-- GPT-3.5-turbo
-- o1, o1-mini
-- Embeddings (text-embedding-3-small/large)
+### OpenAI (38 text models + audio/image)
 
-**Anthropic:**
-- Claude 3.5 Sonnet, Claude 3.5 Haiku
-- Claude 3 Opus, Claude 3 Sonnet, Claude 3 Haiku
-- Prompt caching support
+| Model Family | Input/1M | Output/1M | Notes |
+|--------------|----------|-----------|-------|
+| **GPT-5** (5.2, 5.1, 5, mini, nano) | $0.05-1.75 | $0.40-14.00 | Cached input support |
+| **GPT-5 Pro** | $15.00 | $120.00 | Premium reasoning |
+| **GPT-4.1** (4.1, mini, nano) | $0.10-2.00 | $0.40-8.00 | 1M context window |
+| **GPT-4o** (4o, 4o-mini) | $0.15-2.50 | $0.60-10.00 | 128K context |
+| **O-Series** (o1, o3, o4-mini) | $1.10-20.00 | $4.40-80.00 | Reasoning models |
+| **Audio** (Whisper, TTS) | $0.003-0.012/min | - | Per-minute billing |
+| **Images** (DALL-E 3, GPT-Image) | $0.04-0.12/image | - | Per-image billing |
 
-**Coming Soon:**
-- Google Gemini
-- Mistral
+### Anthropic (23 models)
+
+| Model Family | Input/1M | Output/1M | Notes |
+|--------------|----------|-----------|-------|
+| **Claude 4.5** (Opus, Sonnet, Haiku) | $1.00-5.00 | $5-25 | Latest generation |
+| **Claude 4** (Opus, Sonnet) | $3.00-15.00 | $15-75 | Prompt caching |
+| **Claude 3.7** (Sonnet) | $3.00 | $15.00 | Prompt caching |
+| **Claude 3.5** (Sonnet, Haiku) | $0.80-3.00 | $4-15 | Prompt caching |
+| **Claude 3** (Opus, Sonnet, Haiku) | $0.25-15.00 | $1.25-75 | Legacy |
+
+### Google Gemini (13 models)
+
+| Model Family | Input/1M | Output/1M | Notes |
+|--------------|----------|-----------|-------|
+| **Gemini 3** (Pro, Flash preview) | $0.50-2.00 | $4-12 | Latest preview |
+| **Gemini 2.5** (Pro, Flash, Lite) | $0.10-1.25 | $0.40-10 | Production ready |
+| **Gemini 2.0** (Flash, Lite) | $0.075-0.10 | $0.30-0.40 | Fast inference |
+
+### Coming Soon
+- Mistral (pricing data included, interceptor planned)
 - Custom/self-hosted models
 
 ## 🛠 Development
@@ -337,9 +371,12 @@ python -m tokenledger.server
 - [ ] Alerts & notifications (budget thresholds)
 - [x] Cost allocation tags (feature, team, project, cost_center)
 - [x] Team/project grouping via attribution context
+- [x] Google Gemini support
+- [x] OpenAI audio/image API tracking
+- [x] pydantic-ai framework compatibility
 - [ ] Grafana integration
 - [ ] CLI for querying
-- [ ] More LLM providers (Gemini, Mistral, Cohere)
+- [ ] More LLM providers (Mistral, Cohere)
 - [ ] Streaming cost tracking improvements
 - [ ] TimescaleDB optimization guide
 
