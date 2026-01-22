@@ -21,10 +21,26 @@ _patched = False
 
 
 def _apply_attribution_context(event: LLMEvent) -> None:
-    """Apply current attribution context to an event."""
+    """Apply current attribution context to an event.
+
+    This function reads the attribution context from the current async context
+    and applies any set fields to the event. This is called at the start of
+    each intercepted API call, before any async operations.
+
+    Note: If attribution is not being captured, ensure that:
+    1. You're using `with tokenledger.attribution(...)` or `async with tokenledger.attribution(...)`
+    2. The LLM call happens within the same async task (not in a spawned task)
+    3. No intermediate code is using thread pools or executors that don't propagate context
+    """
     ctx = get_attribution_context()
     if ctx is None:
+        logger.debug("No attribution context found when applying to event")
         return
+
+    logger.debug(
+        f"Applying attribution context: user_id={ctx.user_id}, "
+        f"feature={ctx.feature}, page={ctx.page}"
+    )
 
     if ctx.user_id is not None and event.user_id is None:
         event.user_id = ctx.user_id

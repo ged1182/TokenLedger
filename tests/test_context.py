@@ -222,3 +222,145 @@ class TestAttributionDecorator:
 
         # Context should still be cleaned up
         assert get_attribution_context() == original
+
+
+class TestAsyncContextManager:
+    """Tests for async context manager (async with)."""
+
+    def test_async_context_manager_basic(self) -> None:
+        """Test basic async context manager usage."""
+
+        async def test_coro():
+            async with attribution(user_id="user_123", feature="chat") as ctx:
+                assert ctx.user_id == "user_123"
+                assert ctx.feature == "chat"
+
+                retrieved = get_attribution_context()
+                assert retrieved is not None
+                assert retrieved.user_id == "user_123"
+
+        asyncio.run(test_coro())
+
+    def test_async_context_manager_cleanup(self) -> None:
+        """Test that async context is cleaned up after exit."""
+
+        async def test_coro():
+            original = get_attribution_context()
+
+            async with attribution(user_id="user_123"):
+                pass
+
+            assert get_attribution_context() == original
+
+        asyncio.run(test_coro())
+
+    def test_async_context_manager_with_await(self) -> None:
+        """Test that context persists across await calls."""
+
+        async def inner_coro():
+            # This runs after an await, context should still be set
+            ctx = get_attribution_context()
+            assert ctx is not None
+            assert ctx.user_id == "user_123"
+            assert ctx.feature == "async_test"
+            return ctx.user_id
+
+        async def test_coro():
+            async with attribution(user_id="user_123", feature="async_test"):
+                # Verify context is set
+                ctx = get_attribution_context()
+                assert ctx is not None
+                assert ctx.user_id == "user_123"
+
+                # Call another async function
+                result = await inner_coro()
+                assert result == "user_123"
+
+        asyncio.run(test_coro())
+
+    def test_async_context_manager_nested(self) -> None:
+        """Test nested async context managers."""
+
+        async def test_coro():
+            async with attribution(team="platform", feature="api") as outer:
+                assert outer.team == "platform"
+
+                async with attribution(user_id="user_123") as inner:
+                    assert inner.user_id == "user_123"
+                    assert inner.team == "platform"  # Inherited
+                    assert inner.feature == "api"  # Inherited
+
+                # After inner exits
+                ctx = get_attribution_context()
+                assert ctx is not None
+                assert ctx.team == "platform"
+                assert ctx.user_id is None  # Should be back to outer
+
+        asyncio.run(test_coro())
+
+    def test_context_with_asyncio_create_task(self) -> None:
+        """Test that context propagates to tasks created with asyncio.create_task."""
+
+        async def task_function():
+            # Context should be inherited by the task
+            ctx = get_attribution_context()
+            return ctx
+
+        async def test_coro():
+            async with attribution(user_id="task_user", feature="task_test"):
+                # Create a task - context should propagate
+                task = asyncio.create_task(task_function())
+                result = await task
+
+                # The task should have inherited the context
+                assert result is not None
+                assert result.user_id == "task_user"
+                assert result.feature == "task_test"
+
+        asyncio.run(test_coro())
+
+    def test_sync_with_in_async_function(self) -> None:
+        """Test that sync 'with' also works correctly in async functions."""
+
+        async def test_coro():
+            # Using sync 'with' in async function should work
+            with attribution(user_id="sync_user", feature="sync_test"):
+                ctx = get_attribution_context()
+                assert ctx is not None
+                assert ctx.user_id == "sync_user"
+
+                # Even across awaits
+                await asyncio.sleep(0)
+
+                ctx = get_attribution_context()
+                assert ctx is not None
+                assert ctx.user_id == "sync_user"
+
+        asyncio.run(test_coro())
+
+    def test_async_decorator_uses_async_context_manager(self) -> None:
+        """Test that async decorated functions use async context manager."""
+
+        @attribution(user_id="decorated_user", feature="decorated")
+        async def decorated_async():
+            ctx = get_attribution_context()
+            assert ctx is not None
+            return ctx.user_id
+
+        result = asyncio.run(decorated_async())
+        assert result == "decorated_user"
+
+    def test_async_context_exception_cleanup(self) -> None:
+        """Test that async context is cleaned up on exception."""
+
+        async def test_coro():
+            original = get_attribution_context()
+
+            with pytest.raises(ValueError):
+                async with attribution(user_id="error_user"):
+                    raise ValueError("test error")
+
+            # Should be cleaned up
+            assert get_attribution_context() == original
+
+        asyncio.run(test_coro())

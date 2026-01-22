@@ -132,20 +132,31 @@ class attribution:
     """
     Context manager and decorator for setting attribution context.
 
-    Can be used as a context manager:
+    Can be used as a synchronous context manager:
         with attribution(user_id="user_123", feature="summarize"):
             response = openai.chat.completions.create(...)
+
+    Can be used as an async context manager:
+        async with attribution(user_id="user_123", feature="summarize"):
+            response = await client.chat.completions.create(...)
 
     Can be used as a decorator:
         @attribution(feature="chat", team="ml")
         def handle_chat(message: str):
             return client.messages.create(...)
 
+        @attribution(feature="async_chat", team="ml")
+        async def handle_async_chat(message: str):
+            return await client.messages.create(...)
+
     Nested usage merges contexts (inner values override outer):
         with attribution(team="platform", feature="api"):
             with attribution(user_id="user_123"):
                 # Both team, feature, and user_id are set
                 ...
+
+    Note: For async code, either `with` or `async with` will work correctly.
+    The async form is provided for API consistency and to make async intent explicit.
     """
 
     def __init__(
@@ -176,7 +187,8 @@ class attribution:
         )
         self._token: Token[AttributionContext | None] | None = None
 
-    def __enter__(self) -> AttributionContext:
+    def _enter(self) -> AttributionContext:
+        """Common enter logic for both sync and async context managers."""
         # Get existing context and merge if present
         existing = get_attribution_context()
         merged = existing.merge(self._context) if existing is not None else self._context
@@ -184,14 +196,33 @@ class attribution:
         self._token = set_attribution_context(merged)
         return merged
 
+    def _exit(self) -> None:
+        """Common exit logic for both sync and async context managers."""
+        if self._token is not None:
+            reset_attribution_context(self._token)
+            self._token = None
+
+    def __enter__(self) -> AttributionContext:
+        return self._enter()
+
     def __exit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
     ) -> None:
         # Unused parameters required by context manager protocol
         del exc_type, exc_val, exc_tb
-        if self._token is not None:
-            reset_attribution_context(self._token)
-            self._token = None
+        self._exit()
+
+    async def __aenter__(self) -> AttributionContext:
+        """Async context manager entry. Works identically to sync version."""
+        return self._enter()
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any
+    ) -> None:
+        """Async context manager exit. Works identically to sync version."""
+        # Unused parameters required by context manager protocol
+        del exc_type, exc_val, exc_tb
+        self._exit()
 
     def __call__(self, func: Any) -> Any:
         """Support use as a decorator."""
@@ -202,7 +233,7 @@ class attribution:
 
             @functools.wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-                with self:
+                async with self:
                     return await func(*args, **kwargs)
 
             return async_wrapper
