@@ -248,8 +248,169 @@ def _wrap_async_generate_content(original_method: Callable) -> Callable:
     return wrapper
 
 
+# =============================================================================
+# Embedding API Wrappers
+# =============================================================================
+
+
+def _extract_embedding_tokens(response: Any) -> int:
+    """Extract token count from embedding response."""
+    usage_metadata = getattr(response, "usage_metadata", None)
+    if usage_metadata:
+        return getattr(usage_metadata, "prompt_token_count", 0) or 0
+    return 0
+
+
+def _get_embedding_content_preview(content: Any, max_length: int = 500) -> str | None:
+    """Get a preview of the embedding content."""
+    if not content:
+        return None
+
+    try:
+        if isinstance(content, str):
+            return content[:max_length] if len(content) > max_length else content
+
+        if isinstance(content, list) and len(content) > 0:
+            first_item = content[0]
+            if isinstance(first_item, str):
+                return first_item[:max_length] if len(first_item) > max_length else first_item
+
+    except Exception:
+        pass
+
+    return None
+
+
+def _wrap_embed_content(original_method: Callable) -> Callable:
+    """Wrap the models.embed_content method."""
+
+    @functools.wraps(original_method)
+    def wrapper(self, *, model: str, contents: Any, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model=model,
+            request_type="embedding",
+            endpoint="/v1/models/{model}:embedContent",
+            request_preview=_get_embedding_content_preview(contents),
+        )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(self, model=model, contents=contents, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.input_tokens = _extract_embedding_tokens(response)
+            event.total_tokens = event.input_tokens
+            event.status = "success"
+
+            from ..pricing import calculate_cost
+
+            event.cost_usd = calculate_cost(event.model, event.input_tokens, 0, 0, "google")
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_embed_content(original_method: Callable) -> Callable:
+    """Wrap the async models.embed_content method."""
+
+    @functools.wraps(original_method)
+    async def wrapper(self, *, model: str, contents: Any, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model=model,
+            request_type="embedding",
+            endpoint="/v1/models/{model}:embedContent",
+            request_preview=_get_embedding_content_preview(contents),
+        )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(self, model=model, contents=contents, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.input_tokens = _extract_embedding_tokens(response)
+            event.total_tokens = event.input_tokens
+            event.status = "success"
+
+            from ..pricing import calculate_cost
+
+            event.cost_usd = calculate_cost(event.model, event.input_tokens, 0, 0, "google")
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _patch_embedding_apis() -> None:
+    """Patch Google embedding APIs (embed_content)."""
+    try:
+        from google.genai import models
+
+        # Sync embed_content
+        if hasattr(models.Models, "embed_content"):
+            _original_methods["embed_content"] = models.Models.embed_content
+            models.Models.embed_content = _wrap_embed_content(models.Models.embed_content)
+
+        # Async embed_content
+        if hasattr(models.AsyncModels, "embed_content"):
+            _original_methods["async_embed_content"] = models.AsyncModels.embed_content
+            models.AsyncModels.embed_content = _wrap_async_embed_content(
+                models.AsyncModels.embed_content
+            )
+
+        logger.debug("Google embedding APIs patched for tracking")
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"Could not patch embedding APIs: {e}")
+
+
+def _unpatch_embedding_apis() -> None:
+    """Unpatch Google embedding APIs."""
+    try:
+        from google.genai import models
+
+        if "embed_content" in _original_methods:
+            models.Models.embed_content = _original_methods["embed_content"]
+
+        if "async_embed_content" in _original_methods:
+            models.AsyncModels.embed_content = _original_methods["async_embed_content"]
+
+    except (ImportError, AttributeError):
+        pass
+
+
 def patch_google(
     client: Any | None = None,
+    track_embeddings: bool = True,
 ) -> None:
     """
     Patch the Google GenAI SDK to automatically track all API calls.
@@ -257,6 +418,7 @@ def patch_google(
     Args:
         client: Optional specific Google GenAI client instance to patch.
                 If None, patches the default client class.
+        track_embeddings: Whether to also track embedding calls
 
     Example:
         >>> from google.genai import Client
@@ -298,6 +460,19 @@ def patch_google(
             client.aio.models.generate_content = _wrap_async_generate_content(
                 client.aio.models.generate_content
             ).__get__(client.aio.models, type(client.aio.models))
+
+        # Patch embeddings on client instance if available
+        if track_embeddings and hasattr(client.models, "embed_content"):
+            _original_methods["instance_embed_content"] = client.models.embed_content
+            client.models.embed_content = _wrap_embed_content(client.models.embed_content).__get__(
+                client.models, type(client.models)
+            )
+
+            if hasattr(client, "aio") and hasattr(client.aio.models, "embed_content"):
+                _original_methods["instance_async_embed_content"] = client.aio.models.embed_content
+                client.aio.models.embed_content = _wrap_async_embed_content(
+                    client.aio.models.embed_content
+                ).__get__(client.aio.models, type(client.aio.models))
     else:
         # Patch the class methods
         from google.genai import models
@@ -311,6 +486,10 @@ def patch_google(
         models.AsyncModels.generate_content = _wrap_async_generate_content(
             models.AsyncModels.generate_content
         )
+
+        # Patch embedding APIs
+        if track_embeddings:
+            _patch_embedding_apis()
 
     _patched = True
     logger.info("Google GenAI SDK patched for tracking")
@@ -331,6 +510,9 @@ def unpatch_google() -> None:
 
         if "async_generate_content" in _original_methods:
             models.AsyncModels.generate_content = _original_methods["async_generate_content"]
+
+        # Unpatch embedding APIs
+        _unpatch_embedding_apis()
 
         _original_methods.clear()
         _patched = False

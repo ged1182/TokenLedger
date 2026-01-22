@@ -1117,8 +1117,154 @@ def _wrap_async_images_create_variation(original_method: Callable) -> Callable:
 
 
 # =============================================================================
+# Batch API Wrappers
+# =============================================================================
+
+
+def _wrap_batches_create(original_method: Callable) -> Callable:
+    """Wrap the batches.create method to track batch job creation."""
+
+    @functools.wraps(original_method)
+    def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        # Extract batch info
+        input_file_id = kwargs.get("input_file_id", "")
+        endpoint = kwargs.get("endpoint", "")
+        completion_window = kwargs.get("completion_window", "24h")
+        metadata = kwargs.get("metadata", {})
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="batch",  # Batch doesn't have a model until processing
+            request_type="batch_create",
+            endpoint="/v1/batches",
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            # Store batch details in metadata
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["batch_id"] = getattr(response, "id", None)
+            event.metadata_extra["input_file_id"] = input_file_id
+            event.metadata_extra["batch_endpoint"] = endpoint
+            event.metadata_extra["completion_window"] = completion_window
+            event.metadata_extra["batch_status"] = getattr(response, "status", None)
+            if metadata:
+                event.metadata_extra["batch_metadata"] = metadata
+
+            # No cost at creation - cost is incurred when batch completes
+            # Batch processing gets 50% discount
+            event.cost_usd = None
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+def _wrap_async_batches_create(original_method: Callable) -> Callable:
+    """Wrap the async batches.create method."""
+
+    @functools.wraps(original_method)
+    async def wrapper(*args, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        input_file_id = kwargs.get("input_file_id", "")
+        endpoint = kwargs.get("endpoint", "")
+        completion_window = kwargs.get("completion_window", "24h")
+        metadata = kwargs.get("metadata", {})
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="batch",
+            request_type="batch_create",
+            endpoint="/v1/batches",
+        )
+
+        _apply_attribution_context(event)
+
+        try:
+            response = await original_method(*args, **kwargs)
+
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "success"
+
+            event.metadata_extra = event.metadata_extra or {}
+            event.metadata_extra["batch_id"] = getattr(response, "id", None)
+            event.metadata_extra["input_file_id"] = input_file_id
+            event.metadata_extra["batch_endpoint"] = endpoint
+            event.metadata_extra["completion_window"] = completion_window
+            event.metadata_extra["batch_status"] = getattr(response, "status", None)
+            if metadata:
+                event.metadata_extra["batch_metadata"] = metadata
+
+            event.cost_usd = None
+
+            tracker.track(event)
+            return response
+
+        except Exception as e:
+            event.duration_ms = (time.perf_counter() - start_time) * 1000
+            event.status = "error"
+            event.error_type = type(e).__name__
+            event.error_message = str(e)[:1000]
+            tracker.track(event)
+            raise
+
+    return wrapper
+
+
+# =============================================================================
 # Patching Functions
 # =============================================================================
+
+
+def _patch_batch_apis() -> None:
+    """Patch OpenAI batch APIs."""
+    try:
+        from openai.resources import batches
+
+        _original_methods["batches_create"] = batches.Batches.create
+        batches.Batches.create = _wrap_batches_create(batches.Batches.create)
+
+        _original_methods["async_batches_create"] = batches.AsyncBatches.create
+        batches.AsyncBatches.create = _wrap_async_batches_create(batches.AsyncBatches.create)
+
+        logger.debug("OpenAI batch APIs patched for tracking")
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"Could not patch batch APIs: {e}")
+
+
+def _unpatch_batch_apis() -> None:
+    """Unpatch OpenAI batch APIs."""
+    try:
+        from openai.resources import batches
+
+        if "batches_create" in _original_methods:
+            batches.Batches.create = _original_methods["batches_create"]
+
+        if "async_batches_create" in _original_methods:
+            batches.AsyncBatches.create = _original_methods["async_batches_create"]
+
+    except (ImportError, AttributeError):
+        pass
 
 
 def _patch_audio_apis() -> None:
@@ -1250,6 +1396,7 @@ def patch_openai(
     track_embeddings: bool = True,
     track_audio: bool = True,
     track_images: bool = True,
+    track_batch: bool = True,
 ) -> None:
     """
     Patch the OpenAI SDK to automatically track all API calls.
@@ -1260,6 +1407,7 @@ def patch_openai(
         track_embeddings: Whether to also track embedding calls
         track_audio: Whether to track audio API calls (transcription, translation, TTS)
         track_images: Whether to track image API calls (generate, edit, variations)
+        track_batch: Whether to track batch API calls (50% discount batch processing)
 
     Example:
         >>> import openai
@@ -1348,6 +1496,10 @@ def patch_openai(
         if track_images:
             _patch_image_apis()
 
+        # Patch batch APIs (batch processing with 50% discount)
+        if track_batch:
+            _patch_batch_apis()
+
     _patched = True
     logger.info("OpenAI SDK patched for tracking")
 
@@ -1391,6 +1543,9 @@ def unpatch_openai() -> None:
 
         # Unpatch image APIs
         _unpatch_image_apis()
+
+        # Unpatch batch APIs
+        _unpatch_batch_apis()
 
         _original_methods.clear()
         _patched = False

@@ -117,6 +117,11 @@ GOOGLE_PRICING: dict[str, ModelPricing] = {
     "gemini-1.5-pro": ModelPricing(1.25, 5.00),  # Deprecated
     "gemini-1.5-flash": ModelPricing(0.075, 0.30),  # Deprecated
     "gemini-1.0-pro": ModelPricing(0.50, 1.50),  # Deprecated
+    # Embedding models (input only, no output)
+    "text-embedding-004": ModelPricing(0.01, 0.0),  # $0.01/1M tokens
+    "text-embedding-005": ModelPricing(0.01, 0.0),
+    "text-multilingual-embedding-002": ModelPricing(0.01, 0.0),
+    "embedding-001": ModelPricing(0.01, 0.0),  # Legacy
 }
 
 # Mistral Pricing (as of January 2026)
