@@ -125,15 +125,28 @@ tokenledger.configure(
 
 The real power of TokenLedger is attributing costs to users, organizations, features, and other dimensions. Here's how:
 
-### Using OpenAI's `user` Parameter
+### Using SDK Parameters (Zero Extra Code)
 
-The easiest way—pass the `user` parameter that OpenAI already supports:
+Both OpenAI and Anthropic SDKs have built-in parameters that TokenLedger automatically captures:
+
+**OpenAI** — use the `user` parameter:
 
 ```python
 response = client.chat.completions.create(
     model="gpt-4o",
     messages=[{"role": "user", "content": "Hello!"}],
     user="user_123"  # TokenLedger captures this as user_id
+)
+```
+
+**Anthropic** — use the `metadata` parameter:
+
+```python
+response = client.messages.create(
+    model="claude-sonnet-4-20250514",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello!"}],
+    metadata={"user_id": "user_123"}  # TokenLedger extracts user_id
 )
 ```
 
