@@ -82,6 +82,37 @@ response = client.messages.create(
 )
 ```
 
+### Cost Attribution
+
+Know exactly **who** is spending money and **which features** are driving costs:
+
+```python
+from tokenledger import attribution
+
+# Context manager - all calls inside are attributed
+with attribution(user_id="user_123", feature="summarize", team="ml"):
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Summarize this..."}]
+    )
+
+# Decorator - attribute entire functions
+@attribution(feature="chat", cost_center="CC-001")
+def handle_chat(user_id: str, message: str):
+    with attribution(user_id=user_id):  # Contexts nest and merge
+        return client.chat.completions.create(...)
+```
+
+Query your costs by any dimension:
+
+```sql
+SELECT feature, team, SUM(cost_usd) as cost
+FROM token_ledger_events
+WHERE timestamp >= NOW() - INTERVAL '7 days'
+GROUP BY feature, team
+ORDER BY cost DESC;
+```
+
 ## 📊 Dashboard
 
 TokenLedger includes a beautiful React dashboard:
@@ -304,8 +335,8 @@ python -m tokenledger.server
 ## 🗺 Roadmap
 
 - [ ] Alerts & notifications (budget thresholds)
-- [ ] Cost allocation tags
-- [ ] Team/project grouping
+- [x] Cost allocation tags (feature, team, project, cost_center)
+- [x] Team/project grouping via attribution context
 - [ ] Grafana integration
 - [ ] CLI for querying
 - [ ] More LLM providers (Gemini, Mistral, Cohere)
