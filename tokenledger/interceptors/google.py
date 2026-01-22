@@ -249,6 +249,231 @@ def _wrap_async_generate_content(original_method: Callable) -> Callable:
 
 
 # =============================================================================
+# Streaming API Wrappers
+# =============================================================================
+
+
+def _wrap_generate_content_stream(original_method: Callable) -> Callable:
+    """Wrap the models.generate_content_stream method for streaming responses."""
+
+    @functools.wraps(original_method)
+    def wrapper(self, *, model: str, contents: Any, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model=model,
+            request_type="chat_stream",
+            endpoint="/v1/models/{model}:streamGenerateContent",
+            request_preview=_get_request_preview(contents),
+        )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
+
+        # Get the stream iterator
+        stream_iterator = original_method(self, model=model, contents=contents, **kwargs)
+
+        class TrackedStreamIterator:
+            def __init__(self, stream, event, start_time, tracker):
+                self._stream = stream
+                self._event = event
+                self._start_time = start_time
+                self._tracker = tracker
+                self._response_text: list[str] = []
+                self._tracked = False
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                try:
+                    chunk = next(self._stream)
+
+                    # Extract text from chunk
+                    text = _get_response_preview(chunk, max_length=10000)
+                    if text:
+                        self._response_text.append(text)
+
+                    # Extract token counts from usage_metadata (usually in final chunk)
+                    tokens = _extract_tokens_from_response(chunk)
+                    if tokens["input_tokens"] > 0:
+                        self._event.input_tokens = tokens["input_tokens"]
+                    if tokens["output_tokens"] > 0:
+                        self._event.output_tokens = tokens["output_tokens"]
+                    if tokens["cached_tokens"] > 0:
+                        self._event.cached_tokens = tokens["cached_tokens"]
+
+                    return chunk
+                except StopIteration:
+                    self._finalize()
+                    raise
+                except Exception as e:
+                    self._finalize_error(e)
+                    raise
+
+            def _finalize(self):
+                """Finalize tracking when stream completes successfully."""
+                if self._tracked:
+                    return
+                self._tracked = True
+
+                self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+                self._event.total_tokens = (self._event.input_tokens or 0) + (
+                    self._event.output_tokens or 0
+                )
+                self._event.status = "success"
+
+                # Get response preview
+                if self._response_text:
+                    full_text = "".join(self._response_text)
+                    self._event.response_preview = full_text[:500]
+
+                # Calculate cost
+                from ..pricing import calculate_cost
+
+                self._event.cost_usd = calculate_cost(
+                    self._event.model,
+                    self._event.input_tokens or 0,
+                    self._event.output_tokens or 0,
+                    self._event.cached_tokens or 0,
+                    "google",
+                )
+
+                self._tracker.track(self._event)
+
+            def _finalize_error(self, error: Exception):
+                """Finalize tracking when stream errors."""
+                if self._tracked:
+                    return
+                self._tracked = True
+
+                self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+                self._event.status = "error"
+                self._event.error_type = type(error).__name__
+                self._event.error_message = str(error)[:1000]
+                self._tracker.track(self._event)
+
+            # Proxy other methods to underlying stream
+            def __getattr__(self, name):
+                return getattr(self._stream, name)
+
+        return TrackedStreamIterator(stream_iterator, event, start_time, tracker)
+
+    return wrapper
+
+
+def _wrap_async_generate_content_stream(original_method: Callable) -> Callable:
+    """Wrap the async models.generate_content_stream method for streaming responses."""
+
+    @functools.wraps(original_method)
+    async def wrapper(self, *, model: str, contents: Any, **kwargs):
+        tracker = get_tracker()
+        start_time = time.perf_counter()
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model=model,
+            request_type="chat_stream",
+            endpoint="/v1/models/{model}:streamGenerateContent",
+            request_preview=_get_request_preview(contents),
+        )
+
+        # Apply attribution context
+        _apply_attribution_context(event)
+
+        # Get the async stream iterator
+        stream_iterator = original_method(self, model=model, contents=contents, **kwargs)
+
+        class AsyncTrackedStreamIterator:
+            def __init__(self, stream, event, start_time, tracker):
+                self._stream = stream
+                self._event = event
+                self._start_time = start_time
+                self._tracker = tracker
+                self._response_text: list[str] = []
+                self._tracked = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    chunk = await self._stream.__anext__()
+
+                    # Extract text from chunk
+                    text = _get_response_preview(chunk, max_length=10000)
+                    if text:
+                        self._response_text.append(text)
+
+                    # Extract token counts from usage_metadata
+                    tokens = _extract_tokens_from_response(chunk)
+                    if tokens["input_tokens"] > 0:
+                        self._event.input_tokens = tokens["input_tokens"]
+                    if tokens["output_tokens"] > 0:
+                        self._event.output_tokens = tokens["output_tokens"]
+                    if tokens["cached_tokens"] > 0:
+                        self._event.cached_tokens = tokens["cached_tokens"]
+
+                    return chunk
+                except StopAsyncIteration:
+                    self._finalize()
+                    raise
+                except Exception as e:
+                    self._finalize_error(e)
+                    raise
+
+            def _finalize(self):
+                """Finalize tracking when stream completes successfully."""
+                if self._tracked:
+                    return
+                self._tracked = True
+
+                self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+                self._event.total_tokens = (self._event.input_tokens or 0) + (
+                    self._event.output_tokens or 0
+                )
+                self._event.status = "success"
+
+                if self._response_text:
+                    full_text = "".join(self._response_text)
+                    self._event.response_preview = full_text[:500]
+
+                from ..pricing import calculate_cost
+
+                self._event.cost_usd = calculate_cost(
+                    self._event.model,
+                    self._event.input_tokens or 0,
+                    self._event.output_tokens or 0,
+                    self._event.cached_tokens or 0,
+                    "google",
+                )
+
+                self._tracker.track(self._event)
+
+            def _finalize_error(self, error: Exception):
+                """Finalize tracking when stream errors."""
+                if self._tracked:
+                    return
+                self._tracked = True
+
+                self._event.duration_ms = (time.perf_counter() - self._start_time) * 1000
+                self._event.status = "error"
+                self._event.error_type = type(error).__name__
+                self._event.error_message = str(error)[:1000]
+                self._tracker.track(self._event)
+
+            # Proxy other methods to underlying stream
+            def __getattr__(self, name):
+                return getattr(self._stream, name)
+
+        return AsyncTrackedStreamIterator(stream_iterator, event, start_time, tracker)
+
+    return wrapper
+
+
+# =============================================================================
 # Embedding API Wrappers
 # =============================================================================
 
@@ -371,6 +596,49 @@ def _wrap_async_embed_content(original_method: Callable) -> Callable:
     return wrapper
 
 
+def _patch_streaming_apis() -> None:
+    """Patch Google streaming APIs (generate_content_stream)."""
+    try:
+        from google.genai import models
+
+        # Sync generate_content_stream
+        if hasattr(models.Models, "generate_content_stream"):
+            _original_methods["generate_content_stream"] = models.Models.generate_content_stream
+            models.Models.generate_content_stream = _wrap_generate_content_stream(
+                models.Models.generate_content_stream
+            )
+
+        # Async generate_content_stream
+        if hasattr(models.AsyncModels, "generate_content_stream"):
+            _original_methods["async_generate_content_stream"] = (
+                models.AsyncModels.generate_content_stream
+            )
+            models.AsyncModels.generate_content_stream = _wrap_async_generate_content_stream(
+                models.AsyncModels.generate_content_stream
+            )
+
+        logger.debug("Google streaming APIs patched for tracking")
+    except (ImportError, AttributeError) as e:
+        logger.debug(f"Could not patch streaming APIs: {e}")
+
+
+def _unpatch_streaming_apis() -> None:
+    """Unpatch Google streaming APIs."""
+    try:
+        from google.genai import models
+
+        if "generate_content_stream" in _original_methods:
+            models.Models.generate_content_stream = _original_methods["generate_content_stream"]
+
+        if "async_generate_content_stream" in _original_methods:
+            models.AsyncModels.generate_content_stream = _original_methods[
+                "async_generate_content_stream"
+            ]
+
+    except (ImportError, AttributeError):
+        pass
+
+
 def _patch_embedding_apis() -> None:
     """Patch Google embedding APIs (embed_content)."""
     try:
@@ -411,6 +679,7 @@ def _unpatch_embedding_apis() -> None:
 def patch_google(
     client: Any | None = None,
     track_embeddings: bool = True,
+    track_streaming: bool = True,
 ) -> None:
     """
     Patch the Google GenAI SDK to automatically track all API calls.
@@ -419,6 +688,7 @@ def patch_google(
         client: Optional specific Google GenAI client instance to patch.
                 If None, patches the default client class.
         track_embeddings: Whether to also track embedding calls
+        track_streaming: Whether to track streaming calls (generate_content_stream)
 
     Example:
         >>> from google.genai import Client
@@ -461,6 +731,23 @@ def patch_google(
                 client.aio.models.generate_content
             ).__get__(client.aio.models, type(client.aio.models))
 
+        # Patch streaming on client instance if available
+        if track_streaming and hasattr(client.models, "generate_content_stream"):
+            _original_methods["instance_generate_content_stream"] = (
+                client.models.generate_content_stream
+            )
+            client.models.generate_content_stream = _wrap_generate_content_stream(
+                client.models.generate_content_stream
+            ).__get__(client.models, type(client.models))
+
+            if hasattr(client, "aio") and hasattr(client.aio.models, "generate_content_stream"):
+                _original_methods["instance_async_generate_content_stream"] = (
+                    client.aio.models.generate_content_stream
+                )
+                client.aio.models.generate_content_stream = _wrap_async_generate_content_stream(
+                    client.aio.models.generate_content_stream
+                ).__get__(client.aio.models, type(client.aio.models))
+
         # Patch embeddings on client instance if available
         if track_embeddings and hasattr(client.models, "embed_content"):
             _original_methods["instance_embed_content"] = client.models.embed_content
@@ -487,6 +774,10 @@ def patch_google(
             models.AsyncModels.generate_content
         )
 
+        # Patch streaming APIs
+        if track_streaming:
+            _patch_streaming_apis()
+
         # Patch embedding APIs
         if track_embeddings:
             _patch_embedding_apis()
@@ -510,6 +801,9 @@ def unpatch_google() -> None:
 
         if "async_generate_content" in _original_methods:
             models.AsyncModels.generate_content = _original_methods["async_generate_content"]
+
+        # Unpatch streaming APIs
+        _unpatch_streaming_apis()
 
         # Unpatch embedding APIs
         _unpatch_embedding_apis()
