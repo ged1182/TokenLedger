@@ -9,7 +9,7 @@
 |----------|-------------|------------------|---------------------|--------|
 | **OpenAI** | 2.15.0 | 88% (23/26) | ✅ Full | ✅ Production |
 | **Anthropic** | 0.76.0 | 92% (22/24) | ✅ Full | ✅ Production |
-| **Google** | 1.0.0+ | 85% (9/10) | ✅ Full | ✅ Production |
+| **Google** | 1.0.0+ | 90% (9/10) | ✅ Full | ✅ Production |
 
 ## Recent Updates
 
@@ -32,6 +32,11 @@
 - OpenAI Batch API (`batches.create`) with 50% discount tracking
 - Anthropic Batch API (`messages.batches.create`)
 - Google Embeddings API (`models.embed_content`)
+
+### ✅ Phase 5: Google Streaming (COMPLETED)
+- Google streaming API (`models.generate_content_stream`) sync/async support
+- Token tracking from streamed chunks
+- Response text accumulation and preview
 
 ## Detailed Coverage by Provider
 
@@ -72,7 +77,7 @@
 | Category | API | Sync | Async | Patched | Notes |
 |----------|-----|------|-------|---------|-------|
 | **Text** | models.generate_content | ✅ | ✅ | ✅ | Main generation |
-| | models.generate_content_stream | ✅ | ✅ | ⚠️ | Partial |
+| | models.generate_content_stream | ✅ | ✅ | ✅ | Full streaming |
 | **Embeddings** | models.embed_content | ✅ | ✅ | ✅ | Per-token |
 | **Images** | models.generate_images | ✅ | ✅ | ❌ | Imagen models |
 | **Caching** | caches.create | ✅ | ✅ | ❌ | Discounted tokens |
@@ -143,11 +148,10 @@
 
 ## Future Work
 
-### Phase 5: Extended Coverage (Planned)
+### Deferred (No Timeline)
 - OpenAI Video API (Sora)
 - OpenAI Fine-tuning API (training cost tracking)
 - Google Batch API (batch processing)
-- Google streaming improvements
 
 ## References
 
