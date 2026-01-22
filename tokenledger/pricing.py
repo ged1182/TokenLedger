@@ -196,3 +196,141 @@ def estimate_monthly_cost(
     if per_call is None:
         return None
     return per_call * daily_calls * 30
+
+
+# =============================================================================
+# OpenAI Audio Pricing (per minute for transcription/translation)
+# =============================================================================
+
+OPENAI_AUDIO_PRICING: dict[str, float] = {
+    # Transcription/Translation models (price per minute)
+    "whisper-1": 0.006,
+    "gpt-4o-transcribe": 0.006,
+    "gpt-4o-mini-transcribe": 0.003,
+}
+
+
+def calculate_audio_cost(
+    model: str,
+    duration_minutes: float | None = None,
+) -> float | None:
+    """
+    Calculate the cost of an audio transcription/translation call.
+
+    Note: Duration is not always available from the API response, so this
+    returns None when duration is not provided. The actual cost will be
+    recorded as null in the database.
+
+    Args:
+        model: The model name (e.g., "whisper-1")
+        duration_minutes: Audio duration in minutes (if known)
+
+    Returns:
+        Cost in USD, or None if model not found or duration unknown
+    """
+    price_per_minute = OPENAI_AUDIO_PRICING.get(model)
+    if price_per_minute is None:
+        return None
+
+    # If duration is not provided, we can't calculate exact cost
+    # Return None to indicate unknown cost (will be recorded as null in DB)
+    if duration_minutes is None:
+        return None
+
+    return price_per_minute * duration_minutes
+
+
+# =============================================================================
+# OpenAI TTS Pricing (per 1K characters)
+# =============================================================================
+
+OPENAI_TTS_PRICING: dict[str, float] = {
+    # TTS models (price per 1K characters)
+    "tts-1": 0.015,
+    "tts-1-hd": 0.030,
+    "gpt-4o-mini-tts": 0.010,
+}
+
+
+def calculate_tts_cost(model: str, character_count: int) -> float | None:
+    """
+    Calculate the cost of a TTS (text-to-speech) call.
+
+    Args:
+        model: The model name (e.g., "tts-1")
+        character_count: Number of characters in the input text
+
+    Returns:
+        Cost in USD, or None if model not found
+    """
+    price_per_1k = OPENAI_TTS_PRICING.get(model)
+    if price_per_1k is None:
+        return None
+
+    return (character_count / 1000) * price_per_1k
+
+
+# =============================================================================
+# OpenAI Image Pricing (per image)
+# =============================================================================
+
+# DALL-E 3 pricing by size and quality
+OPENAI_IMAGE_PRICING: dict[str, dict[str, dict[str, float]]] = {
+    "dall-e-3": {
+        "standard": {
+            "1024x1024": 0.040,
+            "1024x1792": 0.080,
+            "1792x1024": 0.080,
+        },
+        "hd": {
+            "1024x1024": 0.080,
+            "1024x1792": 0.120,
+            "1792x1024": 0.120,
+        },
+    },
+    "dall-e-2": {
+        "standard": {
+            "1024x1024": 0.020,
+            "512x512": 0.018,
+            "256x256": 0.016,
+        },
+    },
+}
+
+
+def calculate_image_cost(
+    model: str,
+    n: int = 1,
+    size: str = "1024x1024",
+    quality: str = "standard",
+) -> float | None:
+    """
+    Calculate the cost of an image generation call.
+
+    Args:
+        model: The model name (e.g., "dall-e-3")
+        n: Number of images generated
+        size: Image size (e.g., "1024x1024")
+        quality: Image quality ("standard" or "hd")
+
+    Returns:
+        Cost in USD, or None if pricing not found
+    """
+    model_pricing = OPENAI_IMAGE_PRICING.get(model)
+    if model_pricing is None:
+        return None
+
+    quality_pricing = model_pricing.get(quality, model_pricing.get("standard"))
+    if quality_pricing is None:
+        return None
+
+    price_per_image = quality_pricing.get(size)
+    if price_per_image is None:
+        # Try to find a default size
+        if size in quality_pricing:
+            price_per_image = quality_pricing[size]
+        else:
+            # Use largest available size as fallback
+            price_per_image = max(quality_pricing.values())
+
+    return price_per_image * n
