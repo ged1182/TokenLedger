@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from ..context import get_attribution_context
+from ..context import check_attribution_context_warning, get_attribution_context
 from ..models import LLMEvent
 from ..tracker import get_tracker
 
@@ -24,6 +24,8 @@ def _apply_attribution_context(event: LLMEvent) -> None:
     """Apply current attribution context to an event."""
     ctx = get_attribution_context()
     if ctx is None:
+        # Check if context was recently cleared (possible streaming issue)
+        check_attribution_context_warning()
         return
 
     if ctx.user_id is not None and event.user_id is None:

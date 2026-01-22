@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from ..context import get_attribution_context
+from ..context import check_attribution_context_warning, get_attribution_context
 from ..models import LLMEvent
 from ..tracker import get_tracker
 
@@ -31,10 +31,13 @@ def _apply_attribution_context(event: LLMEvent) -> None:
     1. You're using `with tokenledger.attribution(...)` or `async with tokenledger.attribution(...)`
     2. The LLM call happens within the same async task (not in a spawned task)
     3. No intermediate code is using thread pools or executors that don't propagate context
+    4. For streaming/lazy responses, use `persistent=True` mode
     """
     ctx = get_attribution_context()
     if ctx is None:
         logger.debug("No attribution context found when applying to event")
+        # Check if context was recently cleared (possible streaming issue)
+        check_attribution_context_warning()
         return
 
     logger.debug(

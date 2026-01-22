@@ -9,6 +9,7 @@ from .config import configure, get_config
 from .context import (
     AttributionContext,
     attribution,
+    clear_attribution,
     get_attribution_context,
     reset_attribution_context,
     set_attribution_context,
@@ -32,6 +33,7 @@ __all__ = [
     "LLMEvent",
     "TokenTracker",
     "attribution",
+    "clear_attribution",
     "configure",
     "create_event_safe",
     "get_async_tracker",
