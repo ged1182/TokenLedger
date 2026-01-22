@@ -18,39 +18,47 @@ class ModelPricing:
 # OpenAI Pricing (as of January 2026)
 OPENAI_PRICING: dict[str, ModelPricing] = {
     # GPT-5 series
-    "gpt-5": ModelPricing(1.25, 10.00, 0.13),
+    "gpt-5.2": ModelPricing(1.75, 14.00, 0.175),
+    "gpt-5.1": ModelPricing(1.25, 10.00, 0.125),
+    "gpt-5": ModelPricing(1.25, 10.00, 0.125),
     "gpt-5-mini": ModelPricing(0.25, 2.00, 0.025),
-    # GPT-4.1 series
-    "gpt-4.1": ModelPricing(2.00, 8.00),
-    "gpt-4.1-mini": ModelPricing(0.40, 1.60),
-    # GPT-4o series
-    "gpt-4o": ModelPricing(2.50, 10.00, 0.63),
-    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00, 0.63),
-    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00, 0.63),
+    "gpt-5-nano": ModelPricing(0.05, 0.40, 0.005),
+    "gpt-5-pro": ModelPricing(15.00, 120.00),
+    # GPT-4.1 series (1M context window)
+    "gpt-4.1": ModelPricing(2.00, 8.00, 0.50),
+    "gpt-4.1-mini": ModelPricing(0.40, 1.60, 0.10),
+    "gpt-4.1-nano": ModelPricing(0.10, 0.40, 0.025),
+    # GPT-4o series (128K context)
+    "gpt-4o": ModelPricing(2.50, 10.00, 1.25),
+    "gpt-4o-2024-11-20": ModelPricing(2.50, 10.00, 1.25),
+    "gpt-4o-2024-08-06": ModelPricing(2.50, 10.00, 1.25),
     "gpt-4o-2024-05-13": ModelPricing(5.00, 15.00),
-    "gpt-4o-mini": ModelPricing(0.15, 0.60, 0.04),
-    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60, 0.04),
-    # GPT-4 Turbo
+    "gpt-4o-mini": ModelPricing(0.15, 0.60, 0.075),
+    "gpt-4o-mini-2024-07-18": ModelPricing(0.15, 0.60, 0.075),
+    # GPT-4 Turbo (legacy)
     "gpt-4-turbo": ModelPricing(10.00, 30.00),
     "gpt-4-turbo-2024-04-09": ModelPricing(10.00, 30.00),
     "gpt-4-turbo-preview": ModelPricing(10.00, 30.00),
-    # GPT-4
+    # Legacy GPT-4 models
     "gpt-4": ModelPricing(30.00, 60.00),
     "gpt-4-0613": ModelPricing(30.00, 60.00),
     "gpt-4-32k": ModelPricing(60.00, 120.00),
-    # GPT-3.5 Turbo
+    # GPT-3.5 Turbo (legacy)
     "gpt-3.5-turbo": ModelPricing(0.50, 1.50),
     "gpt-3.5-turbo-0125": ModelPricing(0.50, 1.50),
     "gpt-3.5-turbo-1106": ModelPricing(1.00, 2.00),
     "gpt-3.5-turbo-instruct": ModelPricing(1.50, 2.00),
     # o-series reasoning models
-    "o1": ModelPricing(15.00, 60.00),
-    "o1-2024-12-17": ModelPricing(15.00, 60.00),
-    "o1-preview": ModelPricing(15.00, 60.00),
-    "o1-mini": ModelPricing(3.00, 12.00),
-    "o1-mini-2024-09-12": ModelPricing(3.00, 12.00),
-    "o3": ModelPricing(2.00, 8.00),
-    "o4-mini": ModelPricing(1.10, 4.40),
+    "o1": ModelPricing(15.00, 60.00, 7.50),
+    "o1-2024-12-17": ModelPricing(15.00, 60.00, 7.50),
+    "o1-preview": ModelPricing(15.00, 60.00, 7.50),
+    "o1-mini": ModelPricing(1.10, 4.40, 0.55),
+    "o1-mini-2024-09-12": ModelPricing(1.10, 4.40, 0.55),
+    "o3": ModelPricing(2.00, 8.00, 0.50),
+    "o3-mini": ModelPricing(1.10, 4.40, 0.55),
+    "o3-pro": ModelPricing(20.00, 80.00),
+    "o3-deep-research": ModelPricing(10.00, 40.00, 2.50),
+    "o4-mini": ModelPricing(1.10, 4.40, 0.275),
     # Embeddings
     "text-embedding-3-small": ModelPricing(0.02, 0.0),
     "text-embedding-3-large": ModelPricing(0.13, 0.0),
@@ -75,10 +83,16 @@ ANTHROPIC_PRICING: dict[str, ModelPricing] = {
     "claude-3-opus-20240229": ModelPricing(15.00, 75.00, 1.50),
     "claude-3-sonnet-20240229": ModelPricing(3.00, 15.00, 0.30),
     "claude-3-haiku-20240307": ModelPricing(0.25, 1.25, 0.03),
+    # Claude 3.7 series
+    "claude-3-7-sonnet-20250219": ModelPricing(3.00, 15.00, 0.30),
     # Aliases
     "claude-opus-4-5-latest": ModelPricing(5.00, 25.00, 0.50),
     "claude-sonnet-4-5-latest": ModelPricing(3.00, 15.00, 0.30),
     "claude-haiku-4-5-latest": ModelPricing(1.00, 5.00, 0.10),
+    "claude-opus-4-1-latest": ModelPricing(15.00, 75.00, 1.50),
+    "claude-opus-4-latest": ModelPricing(15.00, 75.00, 1.50),
+    "claude-sonnet-4-latest": ModelPricing(3.00, 15.00, 0.30),
+    "claude-3-7-sonnet-latest": ModelPricing(3.00, 15.00, 0.30),
     "claude-3-5-sonnet-latest": ModelPricing(3.00, 15.00, 0.30),
     "claude-3-5-haiku-latest": ModelPricing(0.80, 4.00, 0.08),
     "claude-3-opus-latest": ModelPricing(15.00, 75.00, 1.50),
@@ -88,12 +102,17 @@ ANTHROPIC_PRICING: dict[str, ModelPricing] = {
 GOOGLE_PRICING: dict[str, ModelPricing] = {
     # Gemini 3 series
     "gemini-3-pro-preview": ModelPricing(2.00, 12.00, 0.20),
+    "gemini-3-flash-preview": ModelPricing(0.50, 4.00, 0.05),
     # Gemini 2.5 series
     "gemini-2.5-pro": ModelPricing(1.25, 10.00, 0.125),
+    "gemini-2.5-pro-preview": ModelPricing(1.25, 10.00, 0.125),
     "gemini-2.5-flash": ModelPricing(0.30, 2.50, 0.03),
+    "gemini-2.5-flash-preview": ModelPricing(0.30, 2.50, 0.03),
     "gemini-2.5-flash-lite": ModelPricing(0.10, 0.40, 0.01),
     # Gemini 2.0 series
     "gemini-2.0-flash": ModelPricing(0.10, 0.40, 0.025),
+    "gemini-2.0-flash-exp": ModelPricing(0.10, 0.40, 0.025),
+    "gemini-2.0-flash-lite": ModelPricing(0.075, 0.30, 0.01875),
     # Legacy models (deprecated - kept for historical cost calculations)
     "gemini-1.5-pro": ModelPricing(1.25, 5.00),  # Deprecated
     "gemini-1.5-flash": ModelPricing(0.075, 0.30),  # Deprecated
@@ -207,6 +226,7 @@ OPENAI_AUDIO_PRICING: dict[str, float] = {
     "whisper-1": 0.006,
     "gpt-4o-transcribe": 0.006,
     "gpt-4o-mini-transcribe": 0.003,
+    "gpt-4o-transcribe-diarization": 0.012,  # With speaker diarization
 }
 
 
@@ -274,7 +294,7 @@ def calculate_tts_cost(model: str, character_count: int) -> float | None:
 # OpenAI Image Pricing (per image)
 # =============================================================================
 
-# DALL-E 3 pricing by size and quality
+# Image generation pricing by model, quality, and size
 OPENAI_IMAGE_PRICING: dict[str, dict[str, dict[str, float]]] = {
     "dall-e-3": {
         "standard": {
@@ -289,6 +309,25 @@ OPENAI_IMAGE_PRICING: dict[str, dict[str, dict[str, float]]] = {
         },
     },
     "dall-e-2": {
+        "standard": {
+            "1024x1024": 0.020,
+            "512x512": 0.018,
+            "256x256": 0.016,
+        },
+    },
+    "gpt-image-1": {
+        "standard": {
+            "1024x1024": 0.040,
+            "1024x1792": 0.080,
+            "1792x1024": 0.080,
+        },
+        "hd": {
+            "1024x1024": 0.080,
+            "1024x1792": 0.120,
+            "1792x1024": 0.120,
+        },
+    },
+    "gpt-image-1-mini": {
         "standard": {
             "1024x1024": 0.020,
             "512x512": 0.018,
