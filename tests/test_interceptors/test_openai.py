@@ -19,7 +19,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # =============================================================================
 # Mock Objects for OpenAI Responses
 # =============================================================================
@@ -66,9 +65,7 @@ class MockResponsesUsage:
     ):
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
-        self.input_tokens_details = (
-            MockInputTokensDetails(cached_tokens) if cached_tokens else None
-        )
+        self.input_tokens_details = MockInputTokensDetails(cached_tokens) if cached_tokens else None
 
 
 class MockMessage:
@@ -1218,21 +1215,14 @@ class TestPatchOpenAI:
         openai_interceptor._patched = False
         openai_interceptor._original_methods.clear()
 
-        with patch.dict("sys.modules", {"openai": MagicMock()}):
-            with patch("tokenledger.interceptors.openai.get_tracker") as mock_tracker:
-                mock_tracker.return_value = MagicMock()
-
-                # Mock the openai.resources modules
-                mock_chat_completions = MagicMock()
-                mock_embeddings = MagicMock()
-
-                with patch.object(
-                    openai_interceptor,
-                    "_original_methods",
-                    {},
-                ):
-                    # Can't fully test without openai installed, but can test flag logic
-                    assert not openai_interceptor._patched
+        with (
+            patch.dict("sys.modules", {"openai": MagicMock()}),
+            patch("tokenledger.interceptors.openai.get_tracker") as mock_tracker,
+            patch.object(openai_interceptor, "_original_methods", {}),
+        ):
+            mock_tracker.return_value = MagicMock()
+            # Can't fully test without openai installed, but can test flag logic
+            assert not openai_interceptor._patched
 
     def test_double_patch_warning(self) -> None:
         """Test that double patching logs a warning."""
@@ -1391,8 +1381,11 @@ class TestEdgeCases:
         for model in models_to_test:
             response = MockChatCompletionResponse(model=model)
 
-            def mock_create(*args, **kwargs):
-                return response
+            def make_mock_create(resp):
+                def mock_create(*args, **kwargs):
+                    return resp
+
+                return mock_create
 
             tracked_event = None
 
@@ -1405,7 +1398,7 @@ class TestEdgeCases:
                 mock_tracker.track = capture_event
                 mock_get_tracker.return_value = mock_tracker
 
-                wrapped = _wrap_chat_completions_create(mock_create)
+                wrapped = _wrap_chat_completions_create(make_mock_create(response))
                 wrapped(model=model, messages=[])
 
                 assert tracked_event.model == model

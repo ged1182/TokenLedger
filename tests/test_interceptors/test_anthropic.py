@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
-from tokenledger.models import LLMEvent
-
 
 # =============================================================================
 # Mock Classes for Anthropic Responses
@@ -722,10 +719,9 @@ class TestWrapStreamingMessages:
                 messages=[{"role": "user", "content": "Hello!"}],
             )
 
-            with pytest.raises(ValueError, match="Stream error"):
-                with stream_ctx as stream:
-                    for _ in stream:
-                        pass
+            with pytest.raises(ValueError, match="Stream error"), stream_ctx as stream:
+                for _ in stream:
+                    pass
 
             assert tracked_event is not None
             assert tracked_event.status == "error"
@@ -784,7 +780,9 @@ class TestWrapAsyncStreamingMessages:
 
         async def run_test():
             chunks = [
-                MockStreamChunk("message_start", model="claude-3-5-sonnet-20241022", input_tokens=150),
+                MockStreamChunk(
+                    "message_start", model="claude-3-5-sonnet-20241022", input_tokens=150
+                ),
                 MockStreamChunk("content_block_delta", text="Async"),
                 MockStreamChunk("content_block_delta", text=" response"),
                 MockStreamChunk("message_delta", output_tokens=75),
@@ -1022,18 +1020,19 @@ class TestPatchingFunctions:
 
     def test_patch_requires_anthropic_sdk(self) -> None:
         """Test that patching requires Anthropic SDK."""
-        from tokenledger.interceptors.anthropic import patch_anthropic, unpatch_anthropic, _patched
         import tokenledger.interceptors.anthropic as anthropic_module
+        from tokenledger.interceptors.anthropic import patch_anthropic
 
         # Reset patched state
         anthropic_module._patched = False
         anthropic_module._original_methods.clear()
 
-        with patch.dict("sys.modules", {"anthropic": None}):
-            with patch("tokenledger.interceptors.anthropic.get_tracker"):
-                # This should raise ImportError when anthropic is not installed
-                with pytest.raises(ImportError, match="Anthropic SDK not installed"):
-                    patch_anthropic()
+        with (
+            patch.dict("sys.modules", {"anthropic": None}),
+            patch("tokenledger.interceptors.anthropic.get_tracker"),
+            pytest.raises(ImportError, match="Anthropic SDK not installed"),
+        ):
+            patch_anthropic()
 
     def test_patch_warns_when_already_patched(self) -> None:
         """Test that patching warns when already patched."""
@@ -1082,8 +1081,9 @@ class TestEdgeCases:
 
     def test_duration_tracking(self) -> None:
         """Test that duration is tracked correctly."""
-        from tokenledger.interceptors.anthropic import _wrap_messages_create
         import time
+
+        from tokenledger.interceptors.anthropic import _wrap_messages_create
 
         response = MockAnthropicResponse()
 

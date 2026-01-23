@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # =============================================================================
 # Mock Classes for Google GenAI SDK
 # =============================================================================
@@ -435,9 +434,7 @@ class TestWrapAsyncGenerateContent:
                 ),
             )
 
-            async def mock_async_generate_content(
-                self, *, model: str, contents: Any, **kwargs
-            ):
+            async def mock_async_generate_content(self, *, model: str, contents: Any, **kwargs):
                 return response
 
             tracked_event = None
@@ -646,9 +643,7 @@ class TestAsyncStreamIterator:
                 mock_get_tracker.return_value = mock_tracker
 
                 wrapped = _wrap_async_generate_content_stream(mock_async_stream)
-                stream = await wrapped(
-                    MagicMock(), model="gemini-2.0-flash", contents="Hello"
-                )
+                stream = await wrapped(MagicMock(), model="gemini-2.0-flash", contents="Hello")
 
                 # Consume the stream
                 collected = []
@@ -692,9 +687,7 @@ class TestAsyncStreamIterator:
                 mock_get_tracker.return_value = mock_tracker
 
                 wrapped = _wrap_async_generate_content_stream(mock_async_stream)
-                stream = await wrapped(
-                    MagicMock(), model="gemini-2.0-flash", contents="Hello"
-                )
+                stream = await wrapped(MagicMock(), model="gemini-2.0-flash", contents="Hello")
 
                 with pytest.raises(RuntimeError, match="Async stream error"):
                     async for _ in stream:
@@ -720,9 +713,7 @@ class TestExtractEmbeddingTokens:
         """Test basic embedding token extraction."""
         from tokenledger.interceptors.google import _extract_embedding_tokens
 
-        response = MockEmbedContentResponse(
-            usage_metadata=MockUsageMetadata(prompt_tokens=75)
-        )
+        response = MockEmbedContentResponse(usage_metadata=MockUsageMetadata(prompt_tokens=75))
 
         tokens = _extract_embedding_tokens(response)
         assert tokens == 75
@@ -769,9 +760,7 @@ class TestWrapEmbedContent:
         from tokenledger.interceptors.google import _wrap_embed_content
         from tokenledger.models import LLMEvent
 
-        response = MockEmbedContentResponse(
-            usage_metadata=MockUsageMetadata(prompt_tokens=100)
-        )
+        response = MockEmbedContentResponse(usage_metadata=MockUsageMetadata(prompt_tokens=100))
 
         def mock_embed_content(self, *, model: str, contents: Any, **kwargs):
             return response
@@ -841,13 +830,9 @@ class TestWrapAsyncEmbedContent:
         from tokenledger.models import LLMEvent
 
         async def run_test():
-            response = MockEmbedContentResponse(
-                usage_metadata=MockUsageMetadata(prompt_tokens=150)
-            )
+            response = MockEmbedContentResponse(usage_metadata=MockUsageMetadata(prompt_tokens=150))
 
-            async def mock_async_embed_content(
-                self, *, model: str, contents: Any, **kwargs
-            ):
+            async def mock_async_embed_content(self, *, model: str, contents: Any, **kwargs):
                 return response
 
             tracked_event = None

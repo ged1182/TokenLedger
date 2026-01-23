@@ -70,7 +70,10 @@ def mock_queries():
     queries = MagicMock()
     queries.get_cost_summary.return_value = MockCostSummary()
     queries.get_projected_monthly_cost.return_value = 3000.0
-    queries.get_costs_by_model.return_value = [MockModelCost(), MockModelCost(model="claude-3-5-sonnet")]
+    queries.get_costs_by_model.return_value = [
+        MockModelCost(),
+        MockModelCost(model="claude-3-5-sonnet"),
+    ]
     queries.get_costs_by_user.return_value = [MockUserCost(), MockUserCost(user_id="user456")]
     queries.get_daily_costs.return_value = [MockDailyCost(), MockDailyCost(date=date(2026, 1, 21))]
     queries.get_hourly_costs.return_value = [MockHourlyCost()]
@@ -94,11 +97,13 @@ def mock_queries():
 @pytest.fixture
 def client(mock_queries):
     """Create test client with mocked queries."""
-    with patch("tokenledger.server.get_queries", return_value=mock_queries):
-        with patch("tokenledger.server.USE_ASYNCPG", False):
-            from tokenledger.server import app
+    with (
+        patch("tokenledger.server.get_queries", return_value=mock_queries),
+        patch("tokenledger.server.USE_ASYNCPG", False),
+    ):
+        from tokenledger.server import app
 
-            yield TestClient(app)
+        yield TestClient(app)
 
 
 class TestHealthEndpoint:
@@ -117,16 +122,18 @@ class TestHealthEndpoint:
         """Test health check returns degraded when database fails."""
         mock_queries.get_cost_summary.side_effect = Exception("Connection failed")
 
-        with patch("tokenledger.server.get_queries", return_value=mock_queries):
-            with patch("tokenledger.server.USE_ASYNCPG", False):
-                from tokenledger.server import app
+        with (
+            patch("tokenledger.server.get_queries", return_value=mock_queries),
+            patch("tokenledger.server.USE_ASYNCPG", False),
+        ):
+            from tokenledger.server import app
 
-                client = TestClient(app)
-                response = client.get("/health")
-                assert response.status_code == 200
-                data = response.json()
-                assert data["status"] == "degraded"
-                assert "error" in data["database"]
+            client = TestClient(app)
+            response = client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "degraded"
+            assert "error" in data["database"]
 
 
 class TestSummaryEndpoint:
@@ -266,14 +273,16 @@ class TestErrorHandling:
         """Test that summary endpoint handles exceptions."""
         mock_queries.get_cost_summary.side_effect = Exception("Database error")
 
-        with patch("tokenledger.server.get_queries", return_value=mock_queries):
-            with patch("tokenledger.server.USE_ASYNCPG", False):
-                from tokenledger.server import app
+        with (
+            patch("tokenledger.server.get_queries", return_value=mock_queries),
+            patch("tokenledger.server.USE_ASYNCPG", False),
+        ):
+            from tokenledger.server import app
 
-                client = TestClient(app, raise_server_exceptions=False)
-                response = client.get("/api/v1/summary")
-                assert response.status_code == 500
-                assert "Database error" in response.json()["detail"]
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get("/api/v1/summary")
+            assert response.status_code == 500
+            assert "Database error" in response.json()["detail"]
 
 
 class TestResponseModels:
