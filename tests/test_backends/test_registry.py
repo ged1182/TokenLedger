@@ -284,3 +284,62 @@ class TestCreateStorageBackend:
         """Test creating a non-existent backend."""
         with pytest.raises(BackendNotFoundError):
             registry.create_storage_backend("nonexistent", config)
+
+
+class TestDriverNotFoundError:
+    """Tests for DriverNotFoundError handling."""
+
+    @pytest.fixture(autouse=True)
+    def cleanup_registry(self):
+        """Clean up registered backends."""
+        registry.clear_registered_backends()
+        yield
+        registry.clear_registered_backends()
+
+    def test_load_storage_backend_driver_not_found(self) -> None:
+        """Test that loading a backend with missing driver raises DriverNotFoundError."""
+        from tokenledger.backends.exceptions import DriverNotFoundError
+
+        # Register a backend pointing to a non-existent module
+        registry.register_storage_backend(
+            "fake_backend", "nonexistent.module.that.does.not.exist", "FakeBackend"
+        )
+
+        with pytest.raises(DriverNotFoundError) as exc_info:
+            registry.load_storage_backend("fake_backend")
+
+        # Should provide install hint
+        assert exc_info.value.install_hint is not None
+        assert "fake_backend" in exc_info.value.backend_name
+
+    def test_load_query_backend_driver_not_found(self) -> None:
+        """Test that loading a query backend with missing driver raises DriverNotFoundError."""
+        from tokenledger.backends.exceptions import DriverNotFoundError
+
+        # Register a backend pointing to a non-existent module
+        registry.register_query_backend(
+            "fake_query_backend", "nonexistent.module.path", "FakeQueryBackend"
+        )
+
+        with pytest.raises(DriverNotFoundError) as exc_info:
+            registry.load_query_backend("fake_query_backend")
+
+        assert exc_info.value.backend_name == "fake_query_backend"
+
+
+class TestEntryPointDiscovery:
+    """Tests for entry point discovery error handling."""
+
+    def test_get_available_backends_handles_entry_point_errors(self) -> None:
+        """Test that entry point discovery errors are handled gracefully."""
+        from unittest.mock import patch
+
+        # Mock entry_points to raise an exception
+        with patch.object(registry, "entry_points", side_effect=Exception("Test error")):
+            # Should not raise, just log a warning
+            storage_backends = registry.get_available_storage_backends()
+            query_backends = registry.get_available_query_backends()
+
+            # Built-in backends should still be available
+            assert "postgresql" in storage_backends
+            assert "postgresql" in query_backends

@@ -84,6 +84,42 @@ class TestAttributionContext:
         assert "team" not in d
         assert "project" not in d
 
+    def test_to_dict_includes_all_set_fields(self) -> None:
+        """Test that to_dict includes all set fields."""
+        ctx = AttributionContext(
+            user_id="user_123",
+            session_id="session_456",
+            organization_id="org_789",
+            feature="chat",
+            page="/api/chat",
+            component="chat-widget",
+            team="ml",
+            project="chatbot",
+            cost_center="CC-001",
+            metadata_extra={"custom": "value"},
+        )
+
+        d = ctx.to_dict()
+
+        assert d["user_id"] == "user_123"
+        assert d["session_id"] == "session_456"
+        assert d["organization_id"] == "org_789"
+        assert d["feature"] == "chat"
+        assert d["page"] == "/api/chat"
+        assert d["component"] == "chat-widget"
+        assert d["team"] == "ml"
+        assert d["project"] == "chatbot"
+        assert d["cost_center"] == "CC-001"
+        assert d["metadata_extra"] == {"custom": "value"}
+
+    def test_to_dict_excludes_empty_metadata_extra(self) -> None:
+        """Test that to_dict excludes empty metadata_extra."""
+        ctx = AttributionContext(user_id="user_123", metadata_extra={})
+
+        d = ctx.to_dict()
+
+        assert "metadata_extra" not in d
+
 
 class TestContextVars:
     """Tests for context variable operations."""
