@@ -270,3 +270,119 @@ class TestHistoryCommand:
             )
             assert result.exit_code == 0
             assert "No migrations have been applied" in result.output
+
+    def test_history_import_error(self) -> None:
+        """Test history handles ImportError gracefully."""
+        with patch.dict("sys.modules", {"tokenledger.migrations": None}):
+            result = runner.invoke(
+                app, ["history", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "not fully implemented" in result.output
+
+    def test_history_exception(self) -> None:
+        """Test history handles general exceptions."""
+        with patch(
+            "tokenledger.migrations.MigrationRunner", side_effect=Exception("History Error")
+        ):
+            result = runner.invoke(
+                app, ["history", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "History Error" in result.output
+
+
+class TestExceptionHandling:
+    """Tests for exception handling in all CLI commands."""
+
+    def test_upgrade_import_error(self) -> None:
+        """Test upgrade handles ImportError gracefully."""
+        with patch.dict("sys.modules", {"tokenledger.migrations": None}):
+            result = runner.invoke(
+                app, ["upgrade", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "not fully implemented" in result.output
+
+    def test_upgrade_exception(self) -> None:
+        """Test upgrade handles general exceptions."""
+        with patch(
+            "tokenledger.migrations.MigrationRunner", side_effect=Exception("Upgrade Error")
+        ):
+            result = runner.invoke(
+                app, ["upgrade", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "Upgrade Error" in result.output
+
+    def test_downgrade_import_error(self) -> None:
+        """Test downgrade handles ImportError gracefully."""
+        with patch.dict("sys.modules", {"tokenledger.migrations": None}):
+            result = runner.invoke(
+                app,
+                [
+                    "downgrade",
+                    "001",
+                    "--yes",
+                    "--database-url",
+                    "postgresql://test:test@localhost/db",
+                ],
+            )
+            assert result.exit_code == 1
+            assert "not fully implemented" in result.output
+
+    def test_downgrade_exception(self) -> None:
+        """Test downgrade handles general exceptions."""
+        with patch(
+            "tokenledger.migrations.MigrationRunner", side_effect=Exception("Downgrade Error")
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "downgrade",
+                    "001",
+                    "--yes",
+                    "--database-url",
+                    "postgresql://test:test@localhost/db",
+                ],
+            )
+            assert result.exit_code == 1
+            assert "Downgrade Error" in result.output
+
+    def test_current_import_error(self) -> None:
+        """Test current handles ImportError gracefully."""
+        with patch.dict("sys.modules", {"tokenledger.migrations": None}):
+            result = runner.invoke(
+                app, ["current", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "not fully implemented" in result.output
+
+    def test_current_exception(self) -> None:
+        """Test current handles general exceptions."""
+        with patch(
+            "tokenledger.migrations.MigrationRunner", side_effect=Exception("Current Error")
+        ):
+            result = runner.invoke(
+                app, ["current", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "Current Error" in result.output
+
+    def test_status_import_error(self) -> None:
+        """Test status handles ImportError gracefully."""
+        with patch.dict("sys.modules", {"tokenledger.migrations": None}):
+            result = runner.invoke(
+                app, ["status", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "not fully implemented" in result.output
+
+    def test_status_exception(self) -> None:
+        """Test status handles general exceptions."""
+        with patch("tokenledger.migrations.MigrationRunner", side_effect=Exception("Status Error")):
+            result = runner.invoke(
+                app, ["status", "--database-url", "postgresql://test:test@localhost/db"]
+            )
+            assert result.exit_code == 1
+            assert "Status Error" in result.output
