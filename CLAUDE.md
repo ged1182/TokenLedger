@@ -64,9 +64,6 @@ dashboard/                # React frontend
 tests/                    # Test suite
 ├── conftest.py           # Pytest fixtures
 └── test_pricing.py       # Pricing tests
-
-migrations/               # Database schema
-└── 001_initial.sql       # Tables, indexes, views
 ```
 
 ## Code Conventions
@@ -91,7 +88,7 @@ migrations/               # Database schema
 - `tokenledger/tracker.py:582` - Core tracking logic, `TokenTracker` class
 - `tokenledger/pricing.py` - Model pricing (USD per 1M tokens)
 - `tokenledger/queries.py` - Pre-built analytics queries
-- `migrations/001_initial.sql` - Database schema with `token_ledger_events` table
+- `tokenledger/alembic/versions/` - Database migrations (run via `tokenledger db init`)
 
 ## Database
 

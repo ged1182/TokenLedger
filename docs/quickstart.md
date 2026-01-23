@@ -159,12 +159,11 @@ TokenLedger supports two database drivers:
 Run the migrations to create tables with proper indexes:
 
 ```bash
-# Using Alembic (recommended)
-alembic upgrade head
+# Using TokenLedger CLI (recommended)
+tokenledger db init
 
-# Or manually run SQL
-psql $DATABASE_URL < migrations/001_initial.sql
-psql $DATABASE_URL < migrations/002_add_attribution_columns.sql
+# Or upgrade to latest migration
+tokenledger db upgrade head
 ```
 
 The schema includes:
@@ -351,9 +350,10 @@ For every LLM call, TokenLedger captures:
 
 1. Go to Supabase Dashboard → Settings → Database
 2. Copy the connection string
-3. Run migrations in SQL Editor:
-   - `migrations/001_initial.sql`
-   - Or use Alembic: `alembic upgrade head`
+3. Run migrations:
+   ```bash
+   DATABASE_URL="postgresql://..." tokenledger db init
+   ```
 4. Configure TokenLedger:
 
 ```python

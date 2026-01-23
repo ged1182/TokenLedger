@@ -145,8 +145,9 @@ jobs:
         run: uv pip install --system -e ".[all,dev]"
 
       - name: Run database migrations
-        run: |
-          PGPASSWORD=tokenledger psql -h localhost -U tokenledger -d tokenledger -f migrations/001_initial.sql
+        env:
+          DATABASE_URL: postgresql://tokenledger:tokenledger@localhost:5432/tokenledger
+        run: tokenledger db init
 
       - name: Run integration tests
         env:

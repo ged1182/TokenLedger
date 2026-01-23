@@ -98,6 +98,29 @@ class MigrationRunner:
         self.schema = schema
         self._config = get_alembic_config(database_url, schema)
 
+    def _safe_walk_revisions(
+        self, script: Any, upper: str, lower: str, fallback: list[str] | None = None
+    ) -> list[Any]:
+        """
+        Safely walk revisions between two points, handling edge cases.
+
+        Args:
+            script: ScriptDirectory instance
+            upper: Upper revision (e.g., "head" or specific revision)
+            lower: Lower revision (e.g., "base" or specific revision)
+            fallback: Fallback revision list if walk fails
+
+        Returns:
+            List of revision objects
+        """
+        try:
+            return list(script.walk_revisions(upper, lower))
+        except Exception:
+            # walk_revisions can fail with invalid ranges
+            if fallback is not None:
+                return [script.get_revision(r) for r in fallback if script.get_revision(r)]
+            return []
+
     def init(self) -> None:
         """
         Initialize the database for TokenLedger.
@@ -163,16 +186,12 @@ class MigrationRunner:
         applied = []
 
         if new_current and new_current != current:
-            # Walk from new current back to old current (or base)
             base_rev = current if current else "base"
-            try:
-                for rev in script.walk_revisions(new_current, base_rev):
-                    if rev.revision != current:
-                        applied.append(rev.revision)
-                applied.reverse()
-            except Exception:
-                # If walk_revisions fails, just return the new current as applied
-                applied = [new_current]
+            fallback = [new_current] if new_current else None
+            for rev in self._safe_walk_revisions(script, new_current, base_rev, fallback):
+                if rev and rev.revision != current:
+                    applied.append(rev.revision)
+            applied.reverse()
 
         return applied
 
@@ -202,10 +221,11 @@ class MigrationRunner:
         command.downgrade(self._config, revision)
 
         # Determine what was reverted
-        reverted = []
         new_current = self.current()
-        for rev in script.walk_revisions(current, new_current or "base"):
-            if rev.revision != new_current:
+        reverted = []
+        fallback = [current] if current and current != new_current else None
+        for rev in self._safe_walk_revisions(script, current, new_current or "base", fallback):
+            if rev and rev.revision != new_current:
                 reverted.append(rev.revision)
 
         return reverted
@@ -247,15 +267,16 @@ class MigrationRunner:
         current = self.current()
 
         result = []
-        # Get all revisions from head to base
-        revisions = list(script.walk_revisions("head", "base"))
+        # Get all revisions - walk from head to base
+        revisions = self._safe_walk_revisions(script, "head", "base")
         revisions.reverse()  # Oldest first
 
+        # Determine which revisions are applied
         applied_revisions = set()
         if current:
-            # All revisions up to and including current are applied
-            for rev in script.walk_revisions(current, "base"):
-                applied_revisions.add(rev.revision)
+            for rev in self._safe_walk_revisions(script, current, "base", [current]):
+                if rev:
+                    applied_revisions.add(rev.revision)
 
         for rev in revisions:
             result.append(
