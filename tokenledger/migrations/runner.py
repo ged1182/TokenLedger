@@ -229,7 +229,7 @@ class MigrationRunner:
 
         engine = create_engine(url)
         with engine.connect() as conn:
-            context = MigrationContext.configure(conn)
+            context = MigrationContext.configure(conn, opts={"version_table_schema": self.schema})
             return context.get_current_revision()
 
     def status(self) -> list[dict[str, Any]]:
