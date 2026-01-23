@@ -1177,6 +1177,308 @@ class TestEdgeCases:
 # =============================================================================
 
 
+class TestApplyAttributionContext:
+    """Tests for _apply_attribution_context function."""
+
+    def test_applies_all_context_fields(self) -> None:
+        """Test that all context fields are applied to event."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.anthropic import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+        )
+
+        with attribution(
+            user_id="user",
+            session_id="session",
+            organization_id="org",
+            feature="feature",
+            page="/page",
+            component="component",
+            team="team",
+            project="project",
+            cost_center="CC001",
+        ):
+            _apply_attribution_context(event)
+
+        assert event.user_id == "user"
+        assert event.session_id == "session"
+        assert event.organization_id == "org"
+        assert event.feature == "feature"
+        assert event.page == "/page"
+        assert event.component == "component"
+        assert event.team == "team"
+        assert event.project == "project"
+        assert event.cost_center == "CC001"
+
+    def test_does_not_overwrite_existing_event_fields(self) -> None:
+        """Test that context does not overwrite existing event fields."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.anthropic import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+            user_id="original_user",
+            feature="original_feature",
+        )
+
+        with attribution(user_id="context_user", feature="context_feature"):
+            _apply_attribution_context(event)
+
+        # Event values should be preserved
+        assert event.user_id == "original_user"
+        assert event.feature == "original_feature"
+
+    def test_metadata_extra_merging(self) -> None:
+        """Test that metadata_extra from context is merged with event metadata."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.anthropic import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+            metadata_extra={"event_key": "event_value"},
+        )
+
+        with attribution(user_id="user123", custom_field="custom_value"):
+            _apply_attribution_context(event)
+
+        # Event metadata should be preserved, context metadata merged
+        assert event.metadata_extra is not None
+        assert event.metadata_extra.get("event_key") == "event_value"
+        assert event.metadata_extra.get("custom_field") == "custom_value"
+
+    def test_no_context_checks_warning(self) -> None:
+        """Test that None context triggers warning check."""
+        from tokenledger.interceptors.anthropic import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+        )
+
+        with (
+            patch("tokenledger.interceptors.anthropic.get_attribution_context", return_value=None),
+            patch(
+                "tokenledger.interceptors.anthropic.check_attribution_context_warning"
+            ) as mock_check,
+        ):
+            _apply_attribution_context(event)
+            mock_check.assert_called_once()
+
+    def test_partial_context_application(self) -> None:
+        """Test that only non-None context fields are applied."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.anthropic import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+        )
+
+        # Only set some fields
+        with attribution(user_id="user", feature="chat"):
+            _apply_attribution_context(event)
+
+        assert event.user_id == "user"
+        assert event.feature == "chat"
+        assert event.session_id is None
+        assert event.organization_id is None
+        assert event.team is None
+
+
+class TestRequestPreviewEdgeCases:
+    """Tests for _get_request_preview edge cases."""
+
+    def test_handles_message_objects(self) -> None:
+        """Test extraction from message objects (not dicts)."""
+        from tokenledger.interceptors.anthropic import _get_request_preview
+
+        mock_message = MagicMock()
+        mock_message.content = "Message from object"
+        messages = [mock_message]
+
+        preview = _get_request_preview(messages)
+        assert preview == "Message from object"
+
+    def test_handles_exception_gracefully(self) -> None:
+        """Test that exceptions are handled gracefully."""
+        from tokenledger.interceptors.anthropic import _get_request_preview
+
+        # Create a message that will cause an exception during iteration
+        class BrokenContent:
+            def __iter__(self):
+                raise ValueError("Iteration error")
+
+        mock_message = MagicMock()
+        mock_message.content = BrokenContent()
+        messages = [mock_message]
+
+        preview = _get_request_preview(messages)
+        assert preview is None  # Gracefully returns None
+
+    def test_handles_empty_content_blocks(self) -> None:
+        """Test handling of content blocks with no text type."""
+        from tokenledger.interceptors.anthropic import _get_request_preview
+
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "image", "data": "..."}],
+            }
+        ]
+
+        preview = _get_request_preview(messages)
+        assert preview is None
+
+
+class TestResponsePreviewEdgeCases:
+    """Tests for _get_response_preview edge cases."""
+
+    def test_handles_exception_in_content(self) -> None:
+        """Test that exceptions are handled gracefully."""
+        from tokenledger.interceptors.anthropic import _get_response_preview
+
+        # Create response that raises during iteration
+        response = MagicMock()
+        response.content = MagicMock()
+        response.content.__iter__ = MagicMock(side_effect=ValueError("Error"))
+
+        preview = _get_response_preview(response)
+        assert preview is None
+
+    def test_handles_text_blocks_without_text(self) -> None:
+        """Test handling of text blocks that have no text attribute."""
+        from tokenledger.interceptors.anthropic import _get_response_preview
+
+        block = MagicMock()
+        block.type = "text"
+        block.text = ""  # Empty text
+
+        response = MagicMock()
+        response.content = [block]
+
+        preview = _get_response_preview(response)
+        assert preview is None
+
+
+class TestAsyncBatchCreateErrors:
+    """Tests for async batch create error handling."""
+
+    def test_async_batch_create_tracks_error(self) -> None:
+        """Test that async batch creation errors are tracked."""
+        from tokenledger.interceptors.anthropic import _wrap_async_batches_create
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise ValueError("Async batch error")
+
+            tracked_event = None
+
+            def capture_track(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.anthropic.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_track
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_batches_create(mock_create)
+
+                with pytest.raises(ValueError, match="Async batch error"):
+                    await wrapped(requests=[{}])
+
+                assert tracked_event is not None
+                assert tracked_event.status == "error"
+                assert tracked_event.error_type == "ValueError"
+
+        asyncio.run(run_test())
+
+
+class TestAsyncStreamingErrors:
+    """Tests for async streaming error handling."""
+
+    def test_async_streaming_handles_error(self) -> None:
+        """Test that async streaming errors are tracked."""
+        from tokenledger.interceptors.anthropic import _wrap_async_streaming_messages
+
+        async def run_test():
+            class AsyncErrorStreamIterator:
+                def __aiter__(self):
+                    return self
+
+                async def __anext__(self):
+                    raise RuntimeError("Async stream error")
+
+            class AsyncErrorStreamContext:
+                async def __aenter__(self):
+                    return AsyncErrorStreamIterator()
+
+                async def __aexit__(self, exc_type, exc_val, exc_tb):
+                    return False
+
+            def mock_stream(*args, **kwargs):
+                return AsyncErrorStreamContext()
+
+            tracked_event = None
+
+            def capture_track(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.anthropic.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_track
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_streaming_messages(mock_stream)
+                stream_ctx = await wrapped(
+                    model="claude-3-5-sonnet-20241022",
+                    messages=[{"role": "user", "content": "Hello!"}],
+                )
+
+                with pytest.raises(RuntimeError, match="Async stream error"):
+                    async with stream_ctx as stream:
+                        async for _ in stream:
+                            pass
+
+                assert tracked_event is not None
+                assert tracked_event.status == "error"
+                assert tracked_event.error_type == "RuntimeError"
+
+        asyncio.run(run_test())
+
+
+class TestUnpatchAnthropic:
+    """Tests for unpatch_anthropic function."""
+
+    def test_unpatch_when_not_patched_returns_early(self) -> None:
+        """Test that unpatching returns early when not patched."""
+        import tokenledger.interceptors.anthropic as anthropic_module
+
+        # Ensure not patched
+        anthropic_module._patched = False
+        anthropic_module._original_methods.clear()
+
+        # Should not raise any error, just return early
+        from tokenledger.interceptors.anthropic import unpatch_anthropic
+
+        unpatch_anthropic()
+
+        # State should remain unchanged
+        assert anthropic_module._patched is False
+        assert len(anthropic_module._original_methods) == 0
+
+
 class TestDifferentModels:
     """Tests for different Anthropic model names."""
 
