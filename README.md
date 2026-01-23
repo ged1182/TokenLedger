@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/ged1182/tokenledger/actions/workflows/ci.yml/badge.svg)](https://github.com/ged1182/tokenledger/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ged1182/tokenledger/branch/main/graph/badge.svg)](https://codecov.io/gh/ged1182/tokenledger)
-[![PyPI version](https://badge.fury.io/py/tokenledger.svg)](https://badge.fury.io/py/tokenledger)
+[![PyPI version](https://img.shields.io/pypi/v/tokenledger.svg)](https://pypi.org/project/tokenledger/)
 [![License: ELv2](https://img.shields.io/badge/License-Elastic%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
@@ -20,11 +20,11 @@ TokenLedger is a **self-hosted** LLM cost analytics solution that runs on your e
 
 ## ✨ Why TokenLedger?
 
-Every startup building AI features is bleeding money on LLM APIs with **zero visibility**:
+Every startup building AI features lacks **cost attribution**:
 
-- 💸 "How much are we spending on OpenAI?" → *Nobody knows*
 - 📊 "Which users are costing us the most?" → *No idea*
 - 🎯 "What's our cost per feature?" → *Can't tell you*
+- 🔍 "Which endpoint is burning through tokens?" → *Who knows*
 
 Existing solutions (Helicone, LangSmith, Langfuse) are either:
 - **SaaS** — Your data leaves your infrastructure
