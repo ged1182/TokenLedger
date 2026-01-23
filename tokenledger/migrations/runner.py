@@ -158,19 +158,21 @@ class MigrationRunner:
         # Run upgrade
         command.upgrade(self._config, revision)
 
-        # Determine what was applied
+        # Determine what was applied by comparing before/after state
+        new_current = self.current()
         applied = []
-        if current is None:
-            # All revisions from base to target were applied
-            for rev in script.walk_revisions(revision, "base"):
-                applied.append(rev.revision)
-            applied.reverse()
-        else:
-            # Revisions from current to target were applied
-            for rev in script.walk_revisions(revision, current):
-                if rev.revision != current:
-                    applied.append(rev.revision)
-            applied.reverse()
+
+        if new_current and new_current != current:
+            # Walk from new current back to old current (or base)
+            base_rev = current if current else "base"
+            try:
+                for rev in script.walk_revisions(new_current, base_rev):
+                    if rev.revision != current:
+                        applied.append(rev.revision)
+                applied.reverse()
+            except Exception:
+                # If walk_revisions fails, just return the new current as applied
+                applied = [new_current]
 
         return applied
 
