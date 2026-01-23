@@ -552,3 +552,127 @@ class TestServerHelpers:
         from tokenledger.server import run_server
 
         assert callable(run_server)
+
+    def test_get_connection_creates_connection(self) -> None:
+        """Test _get_connection creates psycopg2 connection."""
+        import tokenledger.server as server_module
+
+        # Reset the global connection
+        server_module._connection = None
+
+        mock_config = MagicMock()
+        mock_config.database_url = "postgresql://test@localhost/db"
+
+        mock_conn = MagicMock()
+
+        with (
+            patch("tokenledger.server.get_config", return_value=mock_config),
+            patch("psycopg2.connect", return_value=mock_conn) as mock_connect,
+        ):
+            conn = server_module._get_connection()
+
+            mock_connect.assert_called_once_with("postgresql://test@localhost/db")
+            assert conn is mock_conn
+
+        # Cleanup
+        server_module._connection = None
+
+    def test_get_connection_reuses_existing(self) -> None:
+        """Test _get_connection reuses existing connection."""
+        import tokenledger.server as server_module
+
+        mock_conn = MagicMock()
+        server_module._connection = mock_conn
+
+        with patch("psycopg2.connect") as mock_connect:
+            conn = server_module._get_connection()
+
+            mock_connect.assert_not_called()
+            assert conn is mock_conn
+
+        # Cleanup
+        server_module._connection = None
+
+
+class TestAsyncServerHelpers:
+    """Tests for async server helper functions."""
+
+    @pytest.mark.asyncio
+    async def test_get_async_queries_creates_instance(self) -> None:
+        """Test get_async_queries creates instance on first call."""
+        from unittest.mock import AsyncMock
+
+        import tokenledger.server as server_module
+
+        # Reset the global instance
+        server_module._async_queries = None
+
+        mock_db = AsyncMock()
+
+        with patch("tokenledger.async_db.get_async_db", AsyncMock(return_value=mock_db)):
+            queries = await server_module.get_async_queries()
+
+            assert queries is not None
+
+        # Cleanup
+        server_module._async_queries = None
+
+    @pytest.mark.asyncio
+    async def test_get_async_queries_reuses_instance(self) -> None:
+        """Test get_async_queries reuses existing instance."""
+        import tokenledger.server as server_module
+
+        mock_queries = MagicMock()
+        server_module._async_queries = mock_queries
+
+        # Since _async_queries is already set, get_async_db shouldn't be called
+        queries = await server_module.get_async_queries()
+
+        assert queries is mock_queries
+
+        # Cleanup
+        server_module._async_queries = None
+
+
+class TestLifespan:
+    """Tests for application lifespan."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_asyncpg_mode(self) -> None:
+        """Test lifespan initializes and closes async db in asyncpg mode."""
+        from unittest.mock import AsyncMock
+
+        import tokenledger.server as server_module
+
+        mock_init = AsyncMock()
+        mock_close = AsyncMock()
+
+        with (
+            patch.object(server_module, "USE_ASYNCPG", True),
+            patch("tokenledger.async_db.init_async_db", mock_init),
+            patch("tokenledger.async_db.close_async_db", mock_close),
+        ):
+            async with server_module.lifespan(None):
+                mock_init.assert_called_once_with(create_tables=False)
+
+            mock_close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_sync_mode(self) -> None:
+        """Test lifespan does nothing in sync mode."""
+        from unittest.mock import AsyncMock
+
+        import tokenledger.server as server_module
+
+        mock_init = AsyncMock()
+        mock_close = AsyncMock()
+
+        with (
+            patch.object(server_module, "USE_ASYNCPG", False),
+            patch("tokenledger.async_db.init_async_db", mock_init),
+            patch("tokenledger.async_db.close_async_db", mock_close),
+        ):
+            async with server_module.lifespan(None):
+                mock_init.assert_not_called()
+
+            mock_close.assert_not_called()
