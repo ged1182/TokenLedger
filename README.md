@@ -317,10 +317,9 @@ TokenLedger works perfectly with Supabase:
 
 1. Get your connection string from Supabase Dashboard → Settings → Database
 
-2. Run the migrations in order:
-```sql
--- Copy contents of migrations/001_initial.sql to Supabase SQL Editor
--- Then copy contents of migrations/002_add_attribution_columns.sql
+2. Run the migrations:
+```bash
+DATABASE_URL="postgresql://postgres:password@db.xxx.supabase.co:5432/postgres" tokenledger db init
 ```
 
 3. Configure TokenLedger:

@@ -10,8 +10,6 @@ services:
       POSTGRES_DB: tokenledger_test
     ports:
       - "5433:5432"  # Different port to avoid conflicts with dev database
-    volumes:
-      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tokenledger -d tokenledger_test"]
       interval: 2s
@@ -19,3 +17,14 @@ services:
       retries: 10
     tmpfs:
       - /var/lib/postgresql/data  # Use tmpfs for faster tests
+
+  # Run migrations before tests
+  migrate:
+    image: python:3.11-slim
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://tokenledger:tokenledger@postgres:5432/tokenledger_test
+    command: >
+      sh -c "pip install tokenledger && tokenledger db init"

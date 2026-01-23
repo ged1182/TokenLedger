@@ -12,7 +12,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tokenledger"]
       interval: 5s
@@ -32,7 +31,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: python -m tokenledger.server
+    command: sh -c "tokenledger db init && python -m tokenledger.server"
 
   # Dashboard (for development)
   dashboard:
