@@ -8,9 +8,13 @@
 [![License: ELv2](https://img.shields.io/badge/License-Elastic%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
+<!-- TODO: Add dashboard preview image once frontend is polished
 <p align="center">
   <img src="docs/dashboard-preview.png" alt="TokenLedger Dashboard" width="800"/>
 </p>
+-->
+
+> **Note:** TokenLedger is in active development (v0.x). The API is stabilizing but may have breaking changes before v1.0. Pin your version in requirements.
 
 TokenLedger is a **self-hosted** LLM cost analytics solution that runs on your existing Postgres database. Zero external dependencies, complete data ownership, works with Supabase out of the box.
 
