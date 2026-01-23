@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Node.js / Frontend
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+.npm
+.pnpm-store/

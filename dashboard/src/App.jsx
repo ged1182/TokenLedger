@@ -32,12 +32,25 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api/v1';
 // Color palette
 const COLORS = ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'];
 const MODEL_COLORS = {
+  // OpenAI - Greens
+  'gpt-4.5-preview': '#047857',
   'gpt-4o': '#10b981',
   'gpt-4o-mini': '#34d399',
-  'gpt-4-turbo': '#059669',
-  'claude-3-5-sonnet-20241022': '#8b5cf6',
-  'claude-3-opus-20240229': '#a855f7',
-  'claude-3-haiku-20240307': '#c084fc',
+  'o1': '#065f46',
+  'o1-mini': '#059669',
+  'o3-mini': '#6ee7b7',
+  // Anthropic - Purples
+  'claude-opus-4': '#7c3aed',
+  'claude-sonnet-4': '#8b5cf6',
+  'claude-3.5-sonnet': '#a855f7',
+  'claude-3.5-haiku': '#c084fc',
+  'claude-3-opus': '#6d28d9',
+  'claude-3-haiku': '#ddd6fe',
+  // Google - Blues
+  'gemini-2.0-flash': '#3b82f6',
+  'gemini-2.0-pro': '#1d4ed8',
+  'gemini-1.5-pro': '#2563eb',
+  'gemini-1.5-flash': '#60a5fa',
 };
 
 // Format currency
@@ -100,15 +113,40 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Filters
+  const [selectedProvider, setSelectedProvider] = useState('all');
+  const [selectedModel, setSelectedModel] = useState('all');
+  const [selectedUser, setSelectedUser] = useState('all');
+
+  // Reset model when provider changes
+  const handleProviderChange = (provider) => {
+    setSelectedProvider(provider);
+    setSelectedModel('all'); // Reset model since it may not belong to new provider
+  };
+
+  // Available filter options (populated from data)
+  const [providers, setProviders] = useState([]);
+  const [models, setModels] = useState([]);
+  const [users, setUsers] = useState([]);
+
+  // Build query string with filters
+  const buildQueryString = (baseParams = {}) => {
+    const params = new URLSearchParams({ days: days.toString(), ...baseParams });
+    if (selectedModel !== 'all') params.append('model', selectedModel);
+    if (selectedUser !== 'all') params.append('user_id', selectedUser);
+    return params.toString();
+  };
+
   // Fetch all dashboard data
   const fetchData = async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const queryString = buildQueryString();
       const [summaryRes, dailyRes, modelRes, userRes, errorRes, latencyRes] = await Promise.all([
-        fetch(`${API_BASE}/summary?days=${days}`),
-        fetch(`${API_BASE}/costs/daily?days=${days}`),
+        fetch(`${API_BASE}/summary?${queryString}`),
+        fetch(`${API_BASE}/costs/daily?${buildQueryString({ user_id: selectedUser !== 'all' ? selectedUser : '' })}`),
         fetch(`${API_BASE}/costs/by-model?days=${days}`),
         fetch(`${API_BASE}/costs/by-user?days=${days}`),
         fetch(`${API_BASE}/errors?days=${Math.min(days, 7)}`),
@@ -117,12 +155,25 @@ export default function App() {
 
       if (!summaryRes.ok) throw new Error('Failed to fetch data');
 
-      setSummary(await summaryRes.json());
+      const summaryData = await summaryRes.json();
+      const modelData = await modelRes.json();
+      const userData = await userRes.json();
+
+      setSummary(summaryData);
       setDailyCosts(await dailyRes.json());
-      setModelCosts(await modelRes.json());
-      setUserCosts(await userRes.json());
+      setModelCosts(modelData);
+      setUserCosts(userData);
       setErrorStats(await errorRes.json());
       setLatencyStats(await latencyRes.json());
+
+      // Populate filter options
+      const uniqueProviders = [...new Set(modelData.map(m => m.provider))];
+      const uniqueModels = modelData.map(m => ({ model: m.model, provider: m.provider }));
+      const uniqueUsers = userData.map(u => u.user_id);
+
+      setProviders(uniqueProviders);
+      setModels(uniqueModels);
+      setUsers(uniqueUsers);
     } catch (err) {
       setError(err.message);
       // Use demo data if API is not available
@@ -192,7 +243,30 @@ export default function App() {
 
   useEffect(() => {
     fetchData();
-  }, [days]);
+  }, [days, selectedProvider, selectedModel, selectedUser]);
+
+  // Filter data based on selections
+  const filteredModelCosts = modelCosts.filter(m => {
+    if (selectedProvider !== 'all' && m.provider !== selectedProvider) return false;
+    if (selectedModel !== 'all' && m.model !== selectedModel) return false;
+    return true;
+  });
+
+  const filteredUserCosts = userCosts.filter(u => {
+    if (selectedUser !== 'all' && u.user_id !== selectedUser) return false;
+    return true;
+  });
+
+  // Compute filtered summary
+  const filteredSummary = {
+    ...summary,
+    total_cost: selectedProvider === 'all' && selectedModel === 'all'
+      ? summary?.total_cost || 0
+      : filteredModelCosts.reduce((sum, m) => sum + m.total_cost, 0),
+    total_requests: selectedProvider === 'all' && selectedModel === 'all'
+      ? summary?.total_requests || 0
+      : filteredModelCosts.reduce((sum, m) => sum + m.total_requests, 0),
+  };
 
   if (loading) {
     return (
@@ -215,18 +289,65 @@ export default function App() {
               <h1 className="text-xl font-bold gradient-text">TokenLedger</h1>
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
+              {/* Provider Filter */}
+              <div className="relative">
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  className="appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="all">All Providers</option>
+                  {providers.map(p => (
+                    <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              </div>
+
+              {/* Model Filter */}
+              <div className="relative">
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[160px]"
+                >
+                  <option value="all">All Models</option>
+                  {models
+                    .filter(m => selectedProvider === 'all' || m.provider === selectedProvider)
+                    .map(m => (
+                      <option key={m.model} value={m.model}>{m.model}</option>
+                    ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              </div>
+
+              {/* User Filter */}
+              <div className="relative">
+                <select
+                  value={selectedUser}
+                  onChange={(e) => setSelectedUser(e.target.value)}
+                  className="appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="all">All Users</option>
+                  {users.map(u => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              </div>
+
               {/* Time Range Selector */}
               <div className="relative">
                 <select
                   value={days}
                   onChange={(e) => setDays(Number(e.target.value))}
-                  className="appearance-none bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 pr-8 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
-                  <option value={7}>Last 7 days</option>
-                  <option value={14}>Last 14 days</option>
-                  <option value={30}>Last 30 days</option>
-                  <option value={90}>Last 90 days</option>
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
                 </select>
                 <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               </div>
@@ -253,22 +374,22 @@ export default function App() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <StatCard
             title="Total Cost"
-            value={formatCurrency(summary?.total_cost || 0)}
-            subtitle={`Last ${days} days`}
+            value={formatCurrency(filteredSummary?.total_cost || 0)}
+            subtitle={`Last ${days} days${selectedProvider !== 'all' ? ` · ${selectedProvider}` : ''}`}
             icon={DollarSign}
             color="indigo"
           />
           <StatCard
             title="Projected Monthly"
-            value={formatCurrency(summary?.projected_monthly_cost || 0)}
+            value={formatCurrency((filteredSummary?.total_cost || 0) / days * 30)}
             subtitle="Based on current usage"
             icon={TrendingUp}
             color="purple"
           />
           <StatCard
             title="Total Requests"
-            value={formatNumber(summary?.total_requests || 0)}
-            subtitle={`${formatCurrency(summary?.avg_cost_per_request || 0)} avg/request`}
+            value={formatNumber(filteredSummary?.total_requests || 0)}
+            subtitle={filteredSummary?.total_requests ? `${formatCurrency(filteredSummary.total_cost / filteredSummary.total_requests)} avg/request` : '-'}
             icon={Zap}
             color="green"
           />
@@ -331,7 +452,7 @@ export default function App() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={modelCosts}
+                    data={filteredModelCosts}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -340,7 +461,7 @@ export default function App() {
                     dataKey="total_cost"
                     nameKey="model"
                   >
-                    {modelCosts.map((entry, index) => (
+                    {filteredModelCosts.map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={MODEL_COLORS[entry.model] || COLORS[index % COLORS.length]}
@@ -356,7 +477,7 @@ export default function App() {
             </div>
             {/* Legend */}
             <div className="mt-4 space-y-2">
-              {modelCosts.slice(0, 4).map((model, index) => (
+              {filteredModelCosts.slice(0, 4).map((model, index) => (
                 <div key={model.model} className="flex items-center justify-between text-sm">
                   <div className="flex items-center">
                     <div
@@ -380,8 +501,8 @@ export default function App() {
           <div className="card">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Users by Cost</h3>
             <div className="space-y-3">
-              {userCosts.slice(0, 5).map((user, index) => {
-                const maxCost = userCosts[0]?.total_cost || 1;
+              {filteredUserCosts.slice(0, 5).map((user, index) => {
+                const maxCost = filteredUserCosts[0]?.total_cost || 1;
                 const percentage = (user.total_cost / maxCost) * 100;
 
                 return (
