@@ -3,7 +3,7 @@ TokenLedger - LLM Cost Analytics for Postgres
 Know exactly what your AI features cost, per user, per endpoint, per day.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .config import configure, get_config
 from .context import (
