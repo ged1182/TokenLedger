@@ -6,6 +6,7 @@ Handles event logging to PostgreSQL with batching and async support.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import random
 import threading
@@ -67,7 +68,23 @@ class TokenTracker:
         self._context = threading.local()
 
     def _get_connection(self):
-        """Get or create database connection"""
+        """Get or create database connection with health check.
+
+        Validates existing connections are still alive before returning them.
+        This handles serverless database auto-suspension (e.g., Neon) and
+        connection drops that occur in Cloud Run/serverless environments.
+        """
+        # Validate existing connection is still healthy
+        if self._connection is not None:
+            try:
+                with self._connection.cursor() as cur:
+                    cur.execute("SELECT 1")
+            except Exception:
+                logger.debug("Stale connection detected, reconnecting...")
+                with contextlib.suppress(Exception):
+                    self._connection.close()
+                self._connection = None
+
         if self._connection is None:
             try:
                 import psycopg2
@@ -336,7 +353,12 @@ class TokenTracker:
         return self._write_batch(events_to_flush)
 
     def _write_batch(self, events: list[LLMEvent]) -> int:
-        """Write a batch of events to the database"""
+        """Write a batch of events to the database with retry logic.
+
+        Automatically retries on connection errors with exponential backoff.
+        This handles transient failures in serverless environments like Cloud Run
+        connected to auto-suspending databases like Neon.
+        """
         if not events:
             return 0
 
@@ -347,7 +369,29 @@ class TokenTracker:
         if self._use_backend and self._backend is not None:
             return self._backend.write_events(event_dicts)
 
-        # Legacy path: direct database connection
+        # Legacy path: direct database connection with retry
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return self._write_batch_once(event_dicts)
+            except Exception as e:
+                # Clear the broken connection so next attempt reconnects
+                self._clear_connection()
+
+                if attempt < max_retries - 1:
+                    wait_time = 0.5 * (2**attempt)  # Exponential backoff: 0.5s, 1s, 2s
+                    logger.warning(
+                        f"Write attempt {attempt + 1} failed, retrying in {wait_time}s: {e}"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Error writing batch after {max_retries} attempts: {e}")
+                    return 0
+
+        return 0  # Should never reach here, but satisfy type checker
+
+    def _write_batch_once(self, event_dicts: list[dict]) -> int:
+        """Write a batch of events to the database (single attempt)."""
         conn = self._get_connection()
 
         columns = [
@@ -415,13 +459,20 @@ class TokenTracker:
             conn.commit()
 
             if self.config.debug:
-                logger.info(f"Flushed {len(events)} events to database")
+                logger.info(f"Flushed {len(event_dicts)} events to database")
 
-            return len(events)
-        except Exception as e:
-            logger.error(f"Error writing batch: {e}")
-            conn.rollback()
-            return 0
+            return len(event_dicts)
+        except Exception:
+            with contextlib.suppress(Exception):
+                conn.rollback()
+            raise  # Re-raise to trigger retry logic
+
+    def _clear_connection(self) -> None:
+        """Clear the current connection, forcing reconnection on next use."""
+        if self._connection is not None:
+            with contextlib.suppress(Exception):
+                self._connection.close()
+            self._connection = None
 
     @contextmanager
     def trace(self, trace_id: str | None = None):

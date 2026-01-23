@@ -764,9 +764,10 @@ class TestTrackerWriteBatch:
         result = tracker._write_batch([])
         assert result == 0
 
+    @patch("tokenledger.tracker.time.sleep")
     @patch("tokenledger.tracker.TokenTracker._get_connection")
-    def test_write_batch_with_error(self, mock_get_conn: MagicMock) -> None:
-        """Test that write batch handles errors gracefully."""
+    def test_write_batch_with_error(self, mock_get_conn: MagicMock, mock_sleep: MagicMock) -> None:
+        """Test that write batch handles errors gracefully with retries."""
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
@@ -787,7 +788,8 @@ class TestTrackerWriteBatch:
         result = tracker._write_batch(events)
 
         assert result == 0
-        mock_conn.rollback.assert_called_once()
+        # Rollback should be called on each retry attempt
+        assert mock_conn.rollback.call_count == 3
 
     @patch("tokenledger.tracker.TokenTracker._get_connection")
     def test_write_batch_psycopg2_path(self, mock_get_conn: MagicMock) -> None:
@@ -966,6 +968,179 @@ class TestTrackerShutdown:
 
         assert tracker._running is False
         mock_thread.join.assert_called_once_with(timeout=5.0)
+
+
+class TestConnectionRecovery:
+    """Tests for connection recovery in serverless environments."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_write_batch_clears_connection_on_error(self, mock_get_conn: MagicMock) -> None:
+        """Test that connection is cleared when write fails."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.executemany.side_effect = Exception("connection already closed")
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._use_psycopg2 = False
+        tracker._connection = mock_conn  # Simulate existing connection
+
+        events = [LLMEvent(provider="openai", model="gpt-4o")]
+
+        with patch.object(tracker, "_clear_connection") as mock_clear:
+            with patch("tokenledger.tracker.time.sleep"):  # Skip retry delays
+                result = tracker._write_batch(events)
+
+            # Connection should have been cleared on each retry
+            assert mock_clear.call_count == 3  # Called on each failed attempt
+            assert result == 0
+
+    @patch("tokenledger.tracker.time.sleep")
+    def test_write_batch_retries_on_connection_error(self, mock_sleep: MagicMock) -> None:
+        """Test that write batch retries with exponential backoff."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        # First two attempts fail, third succeeds
+        call_count = 0
+
+        def mock_write_once(event_dicts: list) -> int:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise Exception("connection closed")
+            return len(event_dicts)
+
+        tracker._write_batch_once = MagicMock(side_effect=mock_write_once)
+        tracker._clear_connection = MagicMock()
+
+        events = [LLMEvent(provider="openai", model="gpt-4o")]
+        result = tracker._write_batch(events)
+
+        assert result == 1
+        assert call_count == 3
+        # Exponential backoff: 0.5s, 1.0s
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_any_call(0.5)
+        mock_sleep.assert_any_call(1.0)
+
+    def test_write_batch_succeeds_on_first_attempt(self) -> None:
+        """Test that write batch succeeds without retry when connection is healthy."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._write_batch_once = MagicMock(return_value=2)
+        tracker._clear_connection = MagicMock()
+
+        events = [
+            LLMEvent(provider="openai", model="gpt-4o"),
+            LLMEvent(provider="anthropic", model="claude-3"),
+        ]
+        result = tracker._write_batch(events)
+
+        assert result == 2
+        tracker._write_batch_once.assert_called_once()
+        tracker._clear_connection.assert_not_called()
+
+    def test_get_connection_validates_health(self) -> None:
+        """Test that _get_connection validates existing connection health."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        # Set up a mock connection that fails health check
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.execute.side_effect = Exception("connection closed")
+        mock_conn.cursor.return_value = mock_cursor
+
+        tracker._connection = mock_conn
+
+        # Mock the import and connect to return a new connection
+        with patch.dict("sys.modules", {"psycopg2": MagicMock(), "psycopg2.extras": MagicMock()}):
+            import sys
+
+            mock_psycopg2 = sys.modules["psycopg2"]
+            mock_new_conn = MagicMock()
+            mock_psycopg2.connect.return_value = mock_new_conn
+
+            result = tracker._get_connection()
+
+            # Old connection should have been closed
+            mock_conn.close.assert_called_once()
+            # New connection should be returned
+            assert result == mock_new_conn
+            assert tracker._connection == mock_new_conn
+
+    def test_clear_connection(self) -> None:
+        """Test that _clear_connection properly clears the connection."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        mock_conn = MagicMock()
+        tracker._connection = mock_conn
+
+        tracker._clear_connection()
+
+        mock_conn.close.assert_called_once()
+        assert tracker._connection is None
+
+    def test_clear_connection_handles_close_error(self) -> None:
+        """Test that _clear_connection handles errors when closing connection."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        mock_conn = MagicMock()
+        mock_conn.close.side_effect = Exception("already closed")
+        tracker._connection = mock_conn
+
+        # Should not raise
+        tracker._clear_connection()
+
+        assert tracker._connection is None
+
+    @patch("tokenledger.tracker.time.sleep")
+    def test_write_batch_logs_retry_warnings(self, mock_sleep: MagicMock) -> None:
+        """Test that retry attempts are logged as warnings."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._write_batch_once = MagicMock(side_effect=Exception("connection error"))
+        tracker._clear_connection = MagicMock()
+
+        events = [LLMEvent(provider="openai", model="gpt-4o")]
+
+        with patch("tokenledger.tracker.logger") as mock_logger:
+            result = tracker._write_batch(events)
+
+            assert result == 0
+            # Should have 2 warnings (for attempts 1 and 2) and 1 error (final)
+            assert mock_logger.warning.call_count == 2
+            mock_logger.error.assert_called_once()
 
 
 class TestTrackerAttributionContextComplete:
