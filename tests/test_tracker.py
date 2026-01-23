@@ -624,3 +624,434 @@ class TestAsyncTokenTrackerWithBackend:
 
         mock_backend.close.assert_called_once()
         assert tracker._backend is None
+
+
+class TestTrackerAttributionContext:
+    """Tests for attribution context integration in tracker."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_track_applies_attribution_context(self, mock_get_conn: MagicMock) -> None:
+        """Test that attribution context is applied to events."""
+        from tokenledger.context import attribution
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        with attribution(
+            user_id="ctx_user",
+            session_id="ctx_session",
+            feature="ctx_feature",
+            team="ctx_team",
+            project="ctx_project",
+            cost_center="ctx_cost_center",
+        ):
+            event = LLMEvent(provider="openai", model="gpt-4o")
+            tracker.track(event)
+
+        # Check attribution was applied
+        tracked_event = tracker._batch[0]
+        assert tracked_event.user_id == "ctx_user"
+        assert tracked_event.session_id == "ctx_session"
+        assert tracked_event.feature == "ctx_feature"
+        assert tracked_event.team == "ctx_team"
+        assert tracked_event.project == "ctx_project"
+        assert tracked_event.cost_center == "ctx_cost_center"
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_event_values_take_precedence_over_context(self, mock_get_conn: MagicMock) -> None:
+        """Test that event-level values take precedence over context."""
+        from tokenledger.context import attribution
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        with attribution(user_id="ctx_user", feature="ctx_feature"):
+            event = LLMEvent(
+                provider="openai",
+                model="gpt-4o",
+                user_id="event_user",  # This should take precedence
+            )
+            tracker.track(event)
+
+        tracked_event = tracker._batch[0]
+        assert tracked_event.user_id == "event_user"  # Event value used
+        assert tracked_event.feature == "ctx_feature"  # Context value used
+
+
+class TestTrackerAsyncMode:
+    """Tests for async mode behavior."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    @patch("tokenledger.tracker.TokenTracker._start_flush_thread")
+    def test_async_mode_uses_queue(
+        self, mock_start_flush: MagicMock, mock_get_conn: MagicMock
+    ) -> None:
+        """Test that async mode uses queue for events."""
+        mock_conn = MagicMock()
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=True,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._initialized = True  # Skip initialization
+
+        event = LLMEvent(provider="openai", model="gpt-4o")
+        tracker.track(event)
+
+        # Event should be in queue, not batch
+        assert len(tracker._batch) == 0
+        assert not tracker._queue.empty()
+
+    def test_flush_drains_queue_in_async_mode(self) -> None:
+        """Test that flush drains the queue in async mode."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=True,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._initialized = True  # Skip initialization
+
+        # Add events to queue
+        event1 = LLMEvent(provider="openai", model="gpt-4o")
+        event2 = LLMEvent(provider="anthropic", model="claude-3")
+        tracker._queue.put(event1)
+        tracker._queue.put(event2)
+
+        # Mock backend to prevent actual DB write
+        mock_backend = MagicMock()
+        mock_backend.write_events.return_value = 2
+        tracker._use_backend = True
+        tracker._backend = mock_backend
+
+        result = tracker.flush()
+
+        assert result == 2
+        assert tracker._queue.empty()
+
+
+class TestTrackerWriteBatch:
+    """Tests for _write_batch method."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_write_batch_empty_returns_zero(self, mock_get_conn: MagicMock) -> None:
+        """Test that writing empty batch returns 0."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+
+        result = tracker._write_batch([])
+        assert result == 0
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_write_batch_with_error(self, mock_get_conn: MagicMock) -> None:
+        """Test that write batch handles errors gracefully."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.executemany.side_effect = Exception("DB Error")
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._use_psycopg2 = False  # Use psycopg3 path
+
+        events = [LLMEvent(provider="openai", model="gpt-4o")]
+
+        result = tracker._write_batch(events)
+
+        assert result == 0
+        mock_conn.rollback.assert_called_once()
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_write_batch_psycopg2_path(self, mock_get_conn: MagicMock) -> None:
+        """Test write batch using psycopg2 execute_values."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._use_psycopg2 = True
+        mock_execute_values = MagicMock()
+        tracker._execute_values = mock_execute_values
+
+        events = [LLMEvent(provider="openai", model="gpt-4o")]
+
+        result = tracker._write_batch(events)
+
+        assert result == 1
+        mock_execute_values.assert_called_once()
+        mock_conn.commit.assert_called_once()
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_write_batch_logs_in_debug_mode(self, mock_get_conn: MagicMock) -> None:
+        """Test write batch logs when debug is enabled."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            debug=True,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._use_psycopg2 = False
+
+        events = [LLMEvent(provider="openai", model="gpt-4o")]
+
+        with patch("tokenledger.tracker.logger") as mock_logger:
+            result = tracker._write_batch(events)
+
+            assert result == 1
+            mock_logger.info.assert_called()
+
+
+class TestTrackerFlushThread:
+    """Tests for flush thread behavior."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_start_flush_thread(self, mock_get_conn: MagicMock) -> None:
+        """Test that _start_flush_thread starts a background thread."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=True,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._running = False  # Ensure it's stopped initially
+
+        tracker._start_flush_thread()
+
+        assert tracker._running is True
+        assert tracker._flush_thread is not None
+        assert tracker._flush_thread.daemon is True
+
+        # Clean up
+        tracker._running = False
+        tracker._flush_thread.join(timeout=1.0)
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    @patch("tokenledger.tracker.time.sleep")
+    def test_flush_loop_calls_flush(self, mock_sleep: MagicMock, mock_get_conn: MagicMock) -> None:
+        """Test that _flush_loop periodically calls flush."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            flush_interval_seconds=1,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._running = True
+
+        # Make sleep raise exception after first call to stop the loop
+        call_count = 0
+
+        def side_effect(_):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                tracker._running = False
+
+        mock_sleep.side_effect = side_effect
+        tracker.flush = MagicMock()
+
+        tracker._flush_loop()
+
+        # Should have called flush at least once
+        assert tracker.flush.call_count >= 1
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    @patch("tokenledger.tracker.time.sleep")
+    def test_flush_loop_handles_exception(
+        self, mock_sleep: MagicMock, mock_get_conn: MagicMock
+    ) -> None:
+        """Test that _flush_loop handles flush exceptions."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            flush_interval_seconds=1,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._running = True
+
+        call_count = 0
+
+        def sleep_side_effect(_):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                tracker._running = False
+
+        mock_sleep.side_effect = sleep_side_effect
+        tracker.flush = MagicMock(side_effect=Exception("Flush error"))
+
+        with patch("tokenledger.tracker.logger") as mock_logger:
+            tracker._flush_loop()
+
+            # Should have logged the error
+            mock_logger.error.assert_called()
+
+
+class TestTrackerShutdown:
+    """Tests for tracker shutdown."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_shutdown_closes_connection(self, mock_get_conn: MagicMock) -> None:
+        """Test that shutdown closes the database connection."""
+        mock_conn = MagicMock()
+        mock_get_conn.return_value = mock_conn
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+        tracker = TokenTracker(config=config)
+        tracker._connection = mock_conn
+        tracker._initialized = True
+
+        # Mock flush to avoid actual DB operations
+        tracker.flush = MagicMock(return_value=0)
+
+        tracker.shutdown()
+
+        mock_conn.close.assert_called_once()
+        assert tracker._connection is None
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_shutdown_joins_flush_thread(self, mock_get_conn: MagicMock) -> None:
+        """Test that shutdown waits for flush thread to finish."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+        )
+        tracker = TokenTracker(config=config)
+        tracker._running = True
+
+        mock_thread = MagicMock()
+        tracker._flush_thread = mock_thread
+
+        tracker.flush = MagicMock(return_value=0)
+
+        tracker.shutdown()
+
+        assert tracker._running is False
+        mock_thread.join.assert_called_once_with(timeout=5.0)
+
+
+class TestTrackerAttributionContextComplete:
+    """Tests for complete attribution context coverage."""
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_track_applies_all_attribution_fields(self, mock_get_conn: MagicMock) -> None:
+        """Test that all attribution context fields are applied."""
+        from tokenledger.context import attribution
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,  # Disable async mode to use batch directly
+        )
+        tracker = TokenTracker(config=config)
+        tracker._initialized = True
+
+        # Note: metadata_extra kwargs are passed via **kwargs syntax
+        with attribution(
+            user_id="ctx_user",
+            session_id="ctx_session",
+            organization_id="ctx_org",
+            feature="ctx_feature",
+            page="/ctx/page",
+            component="ctx_component",
+            team="ctx_team",
+            project="ctx_project",
+            cost_center="ctx_cost_center",
+            ctx_key="ctx_value",  # This goes into metadata_extra via **kwargs
+        ):
+            event = LLMEvent(provider="openai", model="gpt-4o")
+            tracker.track(event)
+
+        tracked_event = tracker._batch[0]
+        assert tracked_event.user_id == "ctx_user"
+        assert tracked_event.session_id == "ctx_session"
+        assert tracked_event.organization_id == "ctx_org"
+        assert tracked_event.feature == "ctx_feature"
+        assert tracked_event.page == "/ctx/page"
+        assert tracked_event.component == "ctx_component"
+        assert tracked_event.team == "ctx_team"
+        assert tracked_event.project == "ctx_project"
+        assert tracked_event.cost_center == "ctx_cost_center"
+        assert tracked_event.metadata_extra == {"ctx_key": "ctx_value"}
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_track_metadata_extra_merges_with_existing(self, mock_get_conn: MagicMock) -> None:
+        """Test that metadata_extra from context merges with event metadata_extra."""
+        from tokenledger.context import attribution
+
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=False,  # Disable async mode to use batch directly
+        )
+        tracker = TokenTracker(config=config)
+        tracker._initialized = True
+
+        # Pass metadata via **kwargs
+        with attribution(ctx_key="ctx_value"):
+            event = LLMEvent(
+                provider="openai",
+                model="gpt-4o",
+                metadata_extra={"event_key": "event_value"},
+            )
+            tracker.track(event)
+
+        tracked_event = tracker._batch[0]
+        # Event values should take precedence, but context values should be included
+        assert tracked_event.metadata_extra["ctx_key"] == "ctx_value"
+        assert tracked_event.metadata_extra["event_key"] == "event_value"
+
+    @patch("tokenledger.tracker.TokenTracker._get_connection")
+    def test_async_mode_queue_full_warning(self, mock_get_conn: MagicMock) -> None:
+        """Test that warning is logged when queue is full."""
+        config = TokenLedgerConfig(
+            database_url="postgresql://test:test@localhost/test",
+            async_mode=True,
+        )
+        tracker = TokenTracker(config=config)
+        tracker._initialized = True
+
+        # Make queue.put_nowait raise an exception
+        tracker._queue.put_nowait = MagicMock(side_effect=Exception("Queue full"))
+
+        with patch("tokenledger.tracker.logger") as mock_logger:
+            event = LLMEvent(provider="openai", model="gpt-4o")
+            tracker.track(event)
+
+            mock_logger.warning.assert_called_once()
