@@ -19,12 +19,13 @@ def _is_tokenledger_alembic_dir(path: Path) -> bool:
     return path.is_dir() and (path / "env.py").is_file() and (path / "versions").is_dir()
 
 
-def get_alembic_config(database_url: str | None = None) -> Any:
+def get_alembic_config(database_url: str | None = None, schema: str = "public") -> Any:
     """
     Create an Alembic Config object for programmatic usage.
 
     Args:
         database_url: Database URL (uses env vars if not provided)
+        schema: Schema name for TokenLedger tables (default: public)
 
     Returns:
         Configured alembic.config.Config object
@@ -70,6 +71,10 @@ def get_alembic_config(database_url: str | None = None) -> Any:
     elif os.environ.get("DATABASE_URL"):
         config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
+    # Pass schema to migrations via -x argument
+    # This is accessed in env.py via context.get_x_argument()
+    config.cmd_opts = type("obj", (object,), {"x": [f"schema={schema}"]})()
+
     return config
 
 
@@ -91,7 +96,7 @@ class MigrationRunner:
         """
         self.database_url = database_url
         self.schema = schema
-        self._config = get_alembic_config(database_url)
+        self._config = get_alembic_config(database_url, schema)
 
     def init(self) -> None:
         """

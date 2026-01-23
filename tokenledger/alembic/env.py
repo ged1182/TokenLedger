@@ -10,7 +10,7 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine, pool
+from sqlalchemy import create_engine, pool, text
 
 # Alembic Config object - provides access to alembic.ini values
 config = context.config
@@ -22,6 +22,23 @@ if config.config_file_name is not None:
 # Target metadata for autogenerate support
 # We don't use SQLAlchemy ORM models, so this is None
 target_metadata = None
+
+
+def get_schema() -> str:
+    """
+    Get the target schema from -x argument.
+
+    Usage via CLI: alembic -x schema=myschema upgrade head
+    Usage via MigrationRunner: schema is passed automatically
+
+    Returns:
+        Schema name (default: 'public')
+    """
+    # context.get_x_argument() returns a list of values for the key
+    schema_values = context.get_x_argument(as_dictionary=True).get("schema")
+    if schema_values:
+        return schema_values
+    return "public"
 
 
 def get_database_url() -> str:
@@ -55,11 +72,15 @@ def run_migrations_offline() -> None:
         alembic upgrade head --sql > migration.sql
     """
     url = get_database_url()
+    schema = get_schema()
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table_schema=schema,
+        include_schemas=True,
     )
 
     with context.begin_transaction():
@@ -73,6 +94,7 @@ def run_migrations_online() -> None:
     This connects to the database and applies migrations directly.
     """
     url = get_database_url()
+    schema = get_schema()
 
     if not url or url == "driver://user:pass@localhost/dbname":
         raise ValueError(
@@ -86,9 +108,16 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # Set search_path so tables are created in the target schema
+        if schema != "public":
+            connection.execute(text(f"SET search_path TO {schema}, public"))
+            connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
+            version_table_schema=schema,
+            include_schemas=True,
         )
 
         with context.begin_transaction():
