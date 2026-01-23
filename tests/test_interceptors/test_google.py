@@ -1179,3 +1179,270 @@ class TestEdgeCases:
 
             assert tracked_event is not None
             assert len(tracked_event.response_preview) == 500
+
+
+# =============================================================================
+# Tests for _apply_attribution_context
+# =============================================================================
+
+
+class TestApplyAttributionContextDetails:
+    """Tests for _apply_attribution_context function with all context fields."""
+
+    def test_applies_all_context_fields(self) -> None:
+        """Test that all context fields are applied to event."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.google import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model="gemini-2.0-flash",
+        )
+
+        with attribution(
+            user_id="user",
+            session_id="session",
+            organization_id="org",
+            feature="feature",
+            page="/page",
+            component="component",
+            team="team",
+            project="project",
+            cost_center="CC001",
+        ):
+            _apply_attribution_context(event)
+
+        assert event.user_id == "user"
+        assert event.session_id == "session"
+        assert event.organization_id == "org"
+        assert event.feature == "feature"
+        assert event.page == "/page"
+        assert event.component == "component"
+        assert event.team == "team"
+        assert event.project == "project"
+        assert event.cost_center == "CC001"
+
+    def test_does_not_overwrite_existing_event_fields(self) -> None:
+        """Test that context does not overwrite existing event fields."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.google import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model="gemini-2.0-flash",
+            user_id="original_user",
+            feature="original_feature",
+        )
+
+        with attribution(user_id="context_user", feature="context_feature"):
+            _apply_attribution_context(event)
+
+        # Event values should be preserved
+        assert event.user_id == "original_user"
+        assert event.feature == "original_feature"
+
+    def test_metadata_extra_merging(self) -> None:
+        """Test that metadata_extra from context is merged with event metadata."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.google import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model="gemini-2.0-flash",
+            metadata_extra={"event_key": "event_value"},
+        )
+
+        with attribution(user_id="user123", custom_field="custom_value"):
+            _apply_attribution_context(event)
+
+        # Event metadata should be preserved, context metadata merged
+        assert event.metadata_extra is not None
+        assert event.metadata_extra.get("event_key") == "event_value"
+        assert event.metadata_extra.get("custom_field") == "custom_value"
+
+    def test_no_context_checks_warning(self) -> None:
+        """Test that None context triggers warning check."""
+        from tokenledger.interceptors.google import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="google",
+            model="gemini-2.0-flash",
+        )
+
+        with (
+            patch("tokenledger.interceptors.google.get_attribution_context", return_value=None),
+            patch(
+                "tokenledger.interceptors.google.check_attribution_context_warning"
+            ) as mock_check,
+        ):
+            _apply_attribution_context(event)
+            mock_check.assert_called_once()
+
+
+# =============================================================================
+# Tests for Request/Response Preview Edge Cases
+# =============================================================================
+
+
+class TestRequestPreviewEdgeCases:
+    """Tests for _get_request_preview edge cases."""
+
+    def test_handles_content_with_parts_and_no_text(self) -> None:
+        """Test extraction from content with parts that have no text."""
+        from tokenledger.interceptors.google import _get_request_preview
+
+        # Mock content with parts where text is None
+        mock_part = MagicMock()
+        mock_part.text = None  # Part has text attribute but it's None
+        mock_content = MagicMock(spec=["parts"])  # No text attribute
+        mock_content.parts = [mock_part]
+        contents = [mock_content]
+
+        preview = _get_request_preview(contents)
+        assert preview is None
+
+    def test_handles_exception_gracefully(self) -> None:
+        """Test that exceptions during preview extraction are handled."""
+        from tokenledger.interceptors.google import _get_request_preview
+
+        # Create a content that raises an exception when accessed
+        class BrokenContent:
+            @property
+            def text(self):
+                raise ValueError("Broken")
+
+        contents = [BrokenContent()]
+
+        # Should not raise, just return None
+        preview = _get_request_preview(contents)
+        assert preview is None
+
+
+class TestResponsePreviewEdgeCases:
+    """Tests for _get_response_preview edge cases."""
+
+    def test_handles_exception_in_preview(self) -> None:
+        """Test that exceptions during preview extraction are handled."""
+        from tokenledger.interceptors.google import _get_response_preview
+
+        # Create response that raises during iteration
+        response = MagicMock()
+        response.candidates = MagicMock()
+        response.candidates.__iter__ = MagicMock(side_effect=ValueError("Error"))
+        response.text = None
+
+        preview = _get_response_preview(response)
+        assert preview is None
+
+    def test_fallback_to_text_property(self) -> None:
+        """Test fallback to text property when candidates don't have text."""
+        from tokenledger.interceptors.google import _get_response_preview
+
+        response = MagicMock()
+        response.candidates = []  # No candidates
+        response.text = "Fallback text"
+
+        preview = _get_response_preview(response)
+        assert preview == "Fallback text"
+
+
+# =============================================================================
+# Tests for Async Embed Content Error Handling
+# =============================================================================
+
+
+class TestAsyncEmbedContentErrors:
+    """Tests for async embed_content error handling."""
+
+    def test_async_embed_content_error_tracking(self) -> None:
+        """Test that async embed_content errors are tracked."""
+        from tokenledger.interceptors.google import _wrap_async_embed_content
+        from tokenledger.models import LLMEvent
+
+        async def run_test():
+            async def mock_async_embed_error(self, *, model: str, contents: Any, **kwargs):
+                raise ValueError("Async embedding error")
+
+            tracked_event = None
+
+            def capture_track(event: LLMEvent) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.google.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_track
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_embed_content(mock_async_embed_error)
+
+                with pytest.raises(ValueError, match="Async embedding error"):
+                    await wrapped(MagicMock(), model="text-embedding-004", contents="Test")
+
+                assert tracked_event is not None
+                assert tracked_event.status == "error"
+                assert tracked_event.error_type == "ValueError"
+
+        asyncio.run(run_test())
+
+
+# =============================================================================
+# Tests for Patching Functions
+# =============================================================================
+
+
+class TestPatchingFunctions:
+    """Tests for patch_google and unpatch_google functions."""
+
+    def test_patch_requires_google_sdk(self) -> None:
+        """Test that patching requires Google SDK."""
+        import tokenledger.interceptors.google as google_module
+        from tokenledger.interceptors.google import patch_google
+
+        # Reset patched state
+        google_module._patched = False
+        google_module._original_methods.clear()
+
+        with (
+            patch.dict("sys.modules", {"google": None, "google.genai": None}),
+            patch("tokenledger.interceptors.google.get_tracker"),
+            pytest.raises(ImportError, match="Google GenAI SDK not installed"),
+        ):
+            patch_google()
+
+    def test_patch_warns_when_already_patched(self) -> None:
+        """Test that patching warns when already patched."""
+        import tokenledger.interceptors.google as google_module
+
+        # Set patched state
+        google_module._patched = True
+
+        with patch("tokenledger.interceptors.google.logger") as mock_logger:
+            from tokenledger.interceptors.google import patch_google
+
+            patch_google()
+            mock_logger.warning.assert_called_with("Google GenAI is already patched")
+
+        # Reset
+        google_module._patched = False
+
+    def test_unpatch_when_not_patched_returns_early(self) -> None:
+        """Test that unpatching returns early when not patched."""
+        import tokenledger.interceptors.google as google_module
+
+        # Ensure not patched
+        google_module._patched = False
+        google_module._original_methods.clear()
+
+        # Should not raise any error, just return early
+        from tokenledger.interceptors.google import unpatch_google
+
+        unpatch_google()
+
+        # State should remain unchanged
+        assert google_module._patched is False
+        assert len(google_module._original_methods) == 0
