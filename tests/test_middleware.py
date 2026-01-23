@@ -233,3 +233,80 @@ class TestFlaskMiddleware:
         from tokenledger.middleware import FlaskMiddleware, TokenLedger
 
         assert TokenLedger is FlaskMiddleware
+
+    def test_init_with_app(self) -> None:
+        """Test initialization with Flask app."""
+        from unittest.mock import MagicMock
+
+        from tokenledger.middleware import FlaskMiddleware
+
+        mock_app = MagicMock()
+        middleware = FlaskMiddleware(app=mock_app)
+
+        # init_app should have been called
+        assert mock_app.before_request.called
+        assert mock_app.after_request.called
+
+    def test_init_app_registers_handlers(self) -> None:
+        """Test that init_app registers before_request and after_request handlers."""
+        from unittest.mock import MagicMock
+
+        from tokenledger.middleware import FlaskMiddleware
+
+        mock_app = MagicMock()
+        middleware = FlaskMiddleware()
+        middleware.init_app(mock_app)
+
+        # Handlers should be registered
+        mock_app.before_request.assert_called_once()
+        mock_app.after_request.assert_called_once()
+
+    def test_flask_integration_with_mock_request(self) -> None:
+        """Test Flask middleware with mock request context."""
+        from unittest.mock import MagicMock
+
+        from tokenledger.middleware import FlaskMiddleware
+
+        # Create middleware
+        mock_app = MagicMock()
+        before_request_fn = None
+        after_request_fn = None
+
+        def capture_before_request(fn):
+            nonlocal before_request_fn
+            before_request_fn = fn
+
+        def capture_after_request(fn):
+            nonlocal after_request_fn
+            after_request_fn = fn
+
+        mock_app.before_request = capture_before_request
+        mock_app.after_request = capture_after_request
+
+        FlaskMiddleware(app=mock_app)
+
+        # Now we have the handlers
+        assert before_request_fn is not None
+        assert after_request_fn is not None
+
+    def test_flask_all_header_fields(self) -> None:
+        """Test that all Flask header fields are correctly configured."""
+        from tokenledger.middleware import FlaskMiddleware
+
+        middleware = FlaskMiddleware(
+            user_id_header="X-User",
+            session_id_header="X-Session",
+            org_id_header="X-Org",
+            feature_header="X-Feature",
+            team_header="X-Team",
+            project_header="X-Project",
+            cost_center_header="X-Cost",
+        )
+
+        assert middleware.user_id_header == "X-User"
+        assert middleware.session_id_header == "X-Session"
+        assert middleware.org_id_header == "X-Org"
+        assert middleware.feature_header == "X-Feature"
+        assert middleware.team_header == "X-Team"
+        assert middleware.project_header == "X-Project"
+        assert middleware.cost_center_header == "X-Cost"

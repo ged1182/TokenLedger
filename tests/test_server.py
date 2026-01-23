@@ -325,3 +325,230 @@ class TestResponseModels:
 
         response = HealthResponse(status="ok", database="connected", version="0.1.0")
         assert response.status == "ok"
+
+    def test_user_cost_response_model(self) -> None:
+        """Test UserCostResponse model."""
+        from tokenledger.server import UserCostResponse
+
+        response = UserCostResponse(
+            user_id="user123",
+            total_cost=25.0,
+            total_requests=25,
+            total_tokens=12500,
+        )
+        assert response.user_id == "user123"
+        assert response.total_cost == 25.0
+
+    def test_daily_cost_response_model(self) -> None:
+        """Test DailyCostResponse model."""
+        from tokenledger.server import DailyCostResponse
+
+        response = DailyCostResponse(
+            date="2026-01-20",
+            total_cost=10.0,
+            total_requests=10,
+            total_tokens=5000,
+        )
+        assert response.date == "2026-01-20"
+
+    def test_hourly_cost_response_model(self) -> None:
+        """Test HourlyCostResponse model."""
+        from tokenledger.server import HourlyCostResponse
+
+        response = HourlyCostResponse(
+            hour="2026-01-20T14:00:00",
+            total_cost=5.0,
+            total_requests=5,
+        )
+        assert response.hour == "2026-01-20T14:00:00"
+
+    def test_error_stats_response_model(self) -> None:
+        """Test ErrorStatsResponse model."""
+        from tokenledger.server import ErrorStatsResponse
+
+        response = ErrorStatsResponse(
+            total_requests=100,
+            errors=5,
+            error_rate=0.05,
+            status_breakdown={"success": 95, "error": 5},
+        )
+        assert response.total_requests == 100
+        assert response.errors == 5
+
+    def test_latency_response_model(self) -> None:
+        """Test LatencyResponse model."""
+        from tokenledger.server import LatencyResponse
+
+        response = LatencyResponse(
+            p50_ms=100.0,
+            p90_ms=200.0,
+            p95_ms=250.0,
+            p99_ms=400.0,
+            avg_ms=120.0,
+        )
+        assert response.p50_ms == 100.0
+
+
+class TestAsyncEndpoints:
+    """Tests for async mode endpoints."""
+
+    @pytest.fixture
+    def mock_async_queries(self):
+        """Create mock async queries object."""
+        from unittest.mock import AsyncMock
+
+        queries = AsyncMock()
+        queries.get_cost_summary.return_value = MockCostSummary()
+        queries.get_projected_monthly_cost.return_value = 3000.0
+        queries.get_costs_by_model.return_value = [MockModelCost()]
+        queries.get_costs_by_user.return_value = [MockUserCost()]
+        queries.get_daily_costs.return_value = [MockDailyCost()]
+        queries.get_hourly_costs.return_value = [MockHourlyCost()]
+        queries.get_error_rate.return_value = {
+            "total_requests": 100,
+            "errors": 5,
+            "error_rate": 0.05,
+            "status_breakdown": {"success": 95, "error": 5},
+        }
+        queries.get_top_errors.return_value = [{"error": "rate_limit", "count": 3}]
+        queries.get_latency_percentiles.return_value = {
+            "p50_ms": 100.0,
+            "p90_ms": 200.0,
+            "p95_ms": 250.0,
+            "p99_ms": 400.0,
+            "avg_ms": 120.0,
+        }
+        return queries
+
+    def test_async_summary_endpoint(self, mock_async_queries) -> None:
+        """Test summary endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/summary")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["total_cost"] == 100.0
+
+    def test_async_health_endpoint(self, mock_async_queries) -> None:
+        """Test health endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/health")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "ok"
+
+    def test_async_costs_by_model_endpoint(self, mock_async_queries) -> None:
+        """Test costs by model endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/costs/by-model")
+            assert response.status_code == 200
+
+    def test_async_costs_by_user_endpoint(self, mock_async_queries) -> None:
+        """Test costs by user endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/costs/by-user")
+            assert response.status_code == 200
+
+    def test_async_daily_costs_endpoint(self, mock_async_queries) -> None:
+        """Test daily costs endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/costs/daily")
+            assert response.status_code == 200
+
+    def test_async_hourly_costs_endpoint(self, mock_async_queries) -> None:
+        """Test hourly costs endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/costs/hourly")
+            assert response.status_code == 200
+
+    def test_async_errors_endpoint(self, mock_async_queries) -> None:
+        """Test errors endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/errors")
+            assert response.status_code == 200
+
+    def test_async_top_errors_endpoint(self, mock_async_queries) -> None:
+        """Test top errors endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/errors/top")
+            assert response.status_code == 200
+
+    def test_async_latency_endpoint(self, mock_async_queries) -> None:
+        """Test latency endpoint in async mode."""
+        with (
+            patch("tokenledger.server.get_async_queries", return_value=mock_async_queries),
+            patch("tokenledger.server.USE_ASYNCPG", True),
+        ):
+            from tokenledger.server import app
+
+            client = TestClient(app)
+            response = client.get("/api/v1/latency")
+            assert response.status_code == 200
+
+
+class TestServerHelpers:
+    """Tests for server helper functions."""
+
+    def test_get_queries_function(self) -> None:
+        """Test get_queries function."""
+        from unittest.mock import patch
+
+        with patch("tokenledger.server._get_connection") as mock_conn:
+            mock_conn.return_value = MagicMock()
+            from tokenledger.server import get_queries
+
+            queries = get_queries()
+            assert queries is not None
+
+    def test_run_server_function(self) -> None:
+        """Test run_server function exists and is callable."""
+        from tokenledger.server import run_server
+
+        assert callable(run_server)
