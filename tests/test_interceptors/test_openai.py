@@ -1253,6 +1253,921 @@ class TestPatchOpenAI:
 # =============================================================================
 
 
+class TestApplyAttributionContext:
+    """Tests for _apply_attribution_context function."""
+
+    def test_metadata_extra_merging(self) -> None:
+        """Test that metadata_extra from context is merged with event metadata."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.openai import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="gpt-4o",
+            metadata_extra={"event_key": "event_value"},
+        )
+
+        with attribution(user_id="user123", custom_field="custom_value"):
+            _apply_attribution_context(event)
+
+        # Event metadata should be preserved, context metadata merged
+        assert event.user_id == "user123"
+        assert event.metadata_extra is not None
+        assert event.metadata_extra.get("event_key") == "event_value"
+        assert event.metadata_extra.get("custom_field") == "custom_value"
+
+    def test_event_metadata_takes_precedence(self) -> None:
+        """Test that event metadata takes precedence over context metadata."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.openai import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="gpt-4o",
+            metadata_extra={"shared_key": "event_wins"},
+        )
+
+        with attribution(shared_key="context_loses"):
+            _apply_attribution_context(event)
+
+        # Event value should be preserved
+        assert event.metadata_extra["shared_key"] == "event_wins"
+
+    def test_no_context_checks_warning(self) -> None:
+        """Test that None context triggers warning check."""
+        from tokenledger.interceptors.openai import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="gpt-4o",
+        )
+
+        with (
+            patch("tokenledger.interceptors.openai.get_attribution_context", return_value=None),
+            patch(
+                "tokenledger.interceptors.openai.check_attribution_context_warning"
+            ) as mock_check,
+        ):
+            _apply_attribution_context(event)
+            mock_check.assert_called_once()
+
+    def test_applies_all_context_fields(self) -> None:
+        """Test that all context fields are applied to event."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.openai import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="gpt-4o",
+        )
+
+        with attribution(
+            user_id="user",
+            session_id="session",
+            organization_id="org",
+            feature="feature",
+            page="/page",
+            component="component",
+            team="team",
+            project="project",
+            cost_center="CC001",
+        ):
+            _apply_attribution_context(event)
+
+        assert event.user_id == "user"
+        assert event.session_id == "session"
+        assert event.organization_id == "org"
+        assert event.feature == "feature"
+        assert event.page == "/page"
+        assert event.component == "component"
+        assert event.team == "team"
+        assert event.project == "project"
+        assert event.cost_center == "CC001"
+
+    def test_does_not_overwrite_existing_event_fields(self) -> None:
+        """Test that context does not overwrite existing event fields."""
+        from tokenledger.context import attribution
+        from tokenledger.interceptors.openai import _apply_attribution_context
+        from tokenledger.models import LLMEvent
+
+        event = LLMEvent.fast_construct(
+            provider="openai",
+            model="gpt-4o",
+            user_id="original_user",
+            feature="original_feature",
+        )
+
+        with attribution(user_id="context_user", feature="context_feature"):
+            _apply_attribution_context(event)
+
+        # Event values should be preserved
+        assert event.user_id == "original_user"
+        assert event.feature == "original_feature"
+
+
+class TestAsyncAudioWrappers:
+    """Tests for async audio API wrappers."""
+
+    def test_async_transcription_success(self) -> None:
+        """Test async audio transcription tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_audio_transcription_create
+
+        async def run_test():
+            response = MockTranscriptionResponse(text="Async transcription result")
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_audio_transcription_create(mock_create)
+                result = await wrapped(model="whisper-1", file=MagicMock())
+
+                assert result is response
+                assert tracked_event is not None
+                assert tracked_event.model == "whisper-1"
+                assert tracked_event.request_type == "transcription"
+                assert tracked_event.status == "success"
+                assert tracked_event.response_preview == "Async transcription result"
+
+        asyncio.run(run_test())
+
+    def test_async_transcription_error(self) -> None:
+        """Test async audio transcription error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_audio_transcription_create
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise ValueError("Transcription failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_audio_transcription_create(mock_create)
+
+                with pytest.raises(ValueError, match="Transcription failed"):
+                    await wrapped(model="whisper-1", file=MagicMock())
+
+                assert tracked_event.status == "error"
+                assert tracked_event.error_type == "ValueError"
+
+        asyncio.run(run_test())
+
+    def test_async_translation_success(self) -> None:
+        """Test async audio translation tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_audio_translation_create
+
+        async def run_test():
+            response = MockTranscriptionResponse(text="Translated text")
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_audio_translation_create(mock_create)
+                result = await wrapped(model="whisper-1", file=MagicMock())
+
+                assert result is response
+                assert tracked_event.request_type == "translation"
+                assert tracked_event.endpoint == "/v1/audio/translations"
+
+        asyncio.run(run_test())
+
+    def test_async_translation_error(self) -> None:
+        """Test async audio translation error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_audio_translation_create
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise RuntimeError("Translation failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_audio_translation_create(mock_create)
+
+                with pytest.raises(RuntimeError):
+                    await wrapped(model="whisper-1", file=MagicMock())
+
+                assert tracked_event.status == "error"
+
+        asyncio.run(run_test())
+
+    def test_async_speech_success(self) -> None:
+        """Test async audio speech (TTS) tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_audio_speech_create
+
+        async def run_test():
+            response = MagicMock()
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_audio_speech_create(mock_create)
+                result = await wrapped(model="tts-1", input="Hello async world", voice="alloy")
+
+                assert result is response
+                assert tracked_event.request_type == "speech"
+                assert tracked_event.endpoint == "/v1/audio/speech"
+                assert tracked_event.metadata_extra["character_count"] == len("Hello async world")
+
+        asyncio.run(run_test())
+
+    def test_async_speech_error(self) -> None:
+        """Test async audio speech error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_audio_speech_create
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise ValueError("Speech failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_audio_speech_create(mock_create)
+
+                with pytest.raises(ValueError):
+                    await wrapped(model="tts-1", input="Test", voice="alloy")
+
+                assert tracked_event.status == "error"
+
+        asyncio.run(run_test())
+
+
+class TestAudioTranslationWrapper:
+    """Tests for sync audio translation wrapper."""
+
+    def test_translation_success(self) -> None:
+        """Test sync audio translation tracking."""
+        from tokenledger.interceptors.openai import _wrap_audio_translation_create
+
+        response = MockTranscriptionResponse(text="Translated text here")
+
+        def mock_create(*args, **kwargs):
+            return response
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_audio_translation_create(mock_create)
+            result = wrapped(model="whisper-1", file=MagicMock())
+
+            assert result is response
+            assert tracked_event.request_type == "translation"
+            assert tracked_event.endpoint == "/v1/audio/translations"
+            assert tracked_event.response_preview == "Translated text here"
+
+    def test_translation_error(self) -> None:
+        """Test sync audio translation error handling."""
+        from tokenledger.interceptors.openai import _wrap_audio_translation_create
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Translation error")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_audio_translation_create(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="whisper-1", file=MagicMock())
+
+            assert tracked_event.status == "error"
+
+
+class TestImageEditWrapper:
+    """Tests for image edit wrappers."""
+
+    def test_sync_image_edit_success(self) -> None:
+        """Test sync image edit tracking."""
+        from tokenledger.interceptors.openai import _wrap_images_edit
+
+        response = MockImageResponse()
+
+        def mock_create(*args, **kwargs):
+            return response
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_images_edit(mock_create)
+            result = wrapped(
+                model="dall-e-2",
+                prompt="Add a cat",
+                image=MagicMock(),
+                n=2,
+                size="512x512",
+            )
+
+            assert result is response
+            assert tracked_event.request_type == "image_edit"
+            assert tracked_event.endpoint == "/v1/images/edits"
+            assert tracked_event.metadata_extra["image_count"] == 2
+            assert tracked_event.metadata_extra["image_size"] == "512x512"
+
+    def test_sync_image_edit_error(self) -> None:
+        """Test sync image edit error handling."""
+        from tokenledger.interceptors.openai import _wrap_images_edit
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Edit failed")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_images_edit(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="dall-e-2", prompt="Test", image=MagicMock())
+
+            assert tracked_event.status == "error"
+
+    def test_async_image_edit_success(self) -> None:
+        """Test async image edit tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_images_edit
+
+        async def run_test():
+            response = MockImageResponse()
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_images_edit(mock_create)
+                result = await wrapped(
+                    model="dall-e-2",
+                    prompt="Add a dog",
+                    image=MagicMock(),
+                    n=1,
+                    size="1024x1024",
+                )
+
+                assert result is response
+                assert tracked_event.request_type == "image_edit"
+
+        asyncio.run(run_test())
+
+    def test_async_image_edit_error(self) -> None:
+        """Test async image edit error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_images_edit
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise RuntimeError("Async edit failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_images_edit(mock_create)
+
+                with pytest.raises(RuntimeError):
+                    await wrapped(model="dall-e-2", prompt="Test", image=MagicMock())
+
+                assert tracked_event.status == "error"
+
+        asyncio.run(run_test())
+
+
+class TestImageVariationWrapper:
+    """Tests for image variation wrappers."""
+
+    def test_sync_image_variation_success(self) -> None:
+        """Test sync image variation tracking."""
+        from tokenledger.interceptors.openai import _wrap_images_create_variation
+
+        response = MockImageResponse()
+
+        def mock_create(*args, **kwargs):
+            return response
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_images_create_variation(mock_create)
+            result = wrapped(
+                model="dall-e-2",
+                image=MagicMock(),
+                n=3,
+                size="256x256",
+            )
+
+            assert result is response
+            assert tracked_event.request_type == "image_variation"
+            assert tracked_event.endpoint == "/v1/images/variations"
+            assert tracked_event.metadata_extra["image_count"] == 3
+            assert tracked_event.metadata_extra["image_size"] == "256x256"
+
+    def test_sync_image_variation_error(self) -> None:
+        """Test sync image variation error handling."""
+        from tokenledger.interceptors.openai import _wrap_images_create_variation
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Variation failed")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_images_create_variation(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="dall-e-2", image=MagicMock())
+
+            assert tracked_event.status == "error"
+
+    def test_async_image_variation_success(self) -> None:
+        """Test async image variation tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_images_create_variation
+
+        async def run_test():
+            response = MockImageResponse()
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_images_create_variation(mock_create)
+                result = await wrapped(model="dall-e-2", image=MagicMock(), n=2, size="512x512")
+
+                assert result is response
+                assert tracked_event.request_type == "image_variation"
+
+        asyncio.run(run_test())
+
+    def test_async_image_variation_error(self) -> None:
+        """Test async image variation error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_images_create_variation
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise RuntimeError("Async variation failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_images_create_variation(mock_create)
+
+                with pytest.raises(RuntimeError):
+                    await wrapped(model="dall-e-2", image=MagicMock())
+
+                assert tracked_event.status == "error"
+
+        asyncio.run(run_test())
+
+
+class TestAsyncImageGenerateWrapper:
+    """Tests for async image generation wrapper."""
+
+    def test_async_image_generate_success(self) -> None:
+        """Test async image generation tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_images_generate
+
+        async def run_test():
+            response = MockImageResponse()
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_images_generate(mock_create)
+                result = await wrapped(
+                    model="dall-e-3",
+                    prompt="A sunset",
+                    n=1,
+                    size="1024x1024",
+                    quality="hd",
+                )
+
+                assert result is response
+                assert tracked_event.request_type == "image_generation"
+                assert tracked_event.metadata_extra["image_quality"] == "hd"
+
+        asyncio.run(run_test())
+
+    def test_async_image_generate_error(self) -> None:
+        """Test async image generation error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_images_generate
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise ValueError("Generation failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_images_generate(mock_create)
+
+                with pytest.raises(ValueError):
+                    await wrapped(model="dall-e-3", prompt="Test")
+
+                assert tracked_event.status == "error"
+
+        asyncio.run(run_test())
+
+
+class TestAsyncBatchesCreateWrapper:
+    """Tests for async batch create wrapper."""
+
+    def test_async_batch_create_success(self) -> None:
+        """Test async batch creation tracking."""
+        from tokenledger.interceptors.openai import _wrap_async_batches_create
+
+        async def run_test():
+            response = MockBatchResponse(batch_id="batch_async_123", status="validating")
+
+            async def mock_create(*args, **kwargs):
+                return response
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_batches_create(mock_create)
+                result = await wrapped(
+                    input_file_id="file-async-123",
+                    endpoint="/v1/chat/completions",
+                    completion_window="24h",
+                    metadata={"key": "value"},
+                )
+
+                assert result is response
+                assert tracked_event.request_type == "batch_create"
+                assert tracked_event.metadata_extra["batch_id"] == "batch_async_123"
+                assert tracked_event.metadata_extra["batch_metadata"] == {"key": "value"}
+
+        asyncio.run(run_test())
+
+    def test_async_batch_create_error(self) -> None:
+        """Test async batch creation error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_batches_create
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise RuntimeError("Batch creation failed")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_batches_create(mock_create)
+
+                with pytest.raises(RuntimeError):
+                    await wrapped(input_file_id="file-123", endpoint="/v1/chat/completions")
+
+                assert tracked_event.status == "error"
+                assert tracked_event.error_type == "RuntimeError"
+
+        asyncio.run(run_test())
+
+
+class TestResponsesApiErrors:
+    """Tests for responses API error handling."""
+
+    def test_sync_responses_error(self) -> None:
+        """Test sync responses API error handling."""
+        from tokenledger.interceptors.openai import _wrap_responses_create
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Responses API error")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_responses_create(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="gpt-4o", input="Test")
+
+            assert tracked_event.status == "error"
+            assert tracked_event.error_type == "ValueError"
+
+    def test_async_responses_error(self) -> None:
+        """Test async responses API error handling."""
+        from tokenledger.interceptors.openai import _wrap_async_responses_create
+
+        async def run_test():
+            async def mock_create(*args, **kwargs):
+                raise RuntimeError("Async responses error")
+
+            tracked_event = None
+
+            def capture_event(event: Any) -> None:
+                nonlocal tracked_event
+                tracked_event = event
+
+            with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+                mock_tracker = MagicMock()
+                mock_tracker.track = capture_event
+                mock_get_tracker.return_value = mock_tracker
+
+                wrapped = _wrap_async_responses_create(mock_create)
+
+                with pytest.raises(RuntimeError):
+                    await wrapped(model="gpt-4o", input="Test")
+
+                assert tracked_event.status == "error"
+
+        asyncio.run(run_test())
+
+
+class TestAudioTranscriptionErrors:
+    """Tests for audio transcription error handling."""
+
+    def test_sync_transcription_error(self) -> None:
+        """Test sync audio transcription error handling."""
+        from tokenledger.interceptors.openai import _wrap_audio_transcription_create
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Transcription error")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_audio_transcription_create(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="whisper-1", file=MagicMock())
+
+            assert tracked_event.status == "error"
+            assert tracked_event.error_type == "ValueError"
+
+
+class TestSpeechErrors:
+    """Tests for audio speech error handling."""
+
+    def test_sync_speech_error(self) -> None:
+        """Test sync audio speech error handling."""
+        from tokenledger.interceptors.openai import _wrap_audio_speech_create
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Speech error")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_audio_speech_create(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="tts-1", input="Test", voice="alloy")
+
+            assert tracked_event.status == "error"
+
+
+class TestImageGenerationErrors:
+    """Tests for image generation error handling."""
+
+    def test_sync_image_generate_error(self) -> None:
+        """Test sync image generation error handling."""
+        from tokenledger.interceptors.openai import _wrap_images_generate
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Generation error")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_images_generate(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(model="dall-e-3", prompt="Test")
+
+            assert tracked_event.status == "error"
+
+
+class TestBatchCreateErrors:
+    """Tests for batch create error handling."""
+
+    def test_sync_batch_create_error(self) -> None:
+        """Test sync batch creation error handling."""
+        from tokenledger.interceptors.openai import _wrap_batches_create
+
+        def mock_create(*args, **kwargs):
+            raise ValueError("Batch error")
+
+        tracked_event = None
+
+        def capture_event(event: Any) -> None:
+            nonlocal tracked_event
+            tracked_event = event
+
+        with patch("tokenledger.interceptors.openai.get_tracker") as mock_get_tracker:
+            mock_tracker = MagicMock()
+            mock_tracker.track = capture_event
+            mock_get_tracker.return_value = mock_tracker
+
+            wrapped = _wrap_batches_create(mock_create)
+
+            with pytest.raises(ValueError):
+                wrapped(input_file_id="file-123", endpoint="/v1/chat/completions")
+
+            assert tracked_event.status == "error"
+
+
 class TestEdgeCases:
     """Tests for edge cases and unusual inputs."""
 
