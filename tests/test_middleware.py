@@ -310,3 +310,187 @@ class TestFlaskMiddleware:
         assert middleware.team_header == "X-Team"
         assert middleware.project_header == "X-Project"
         assert middleware.cost_center_header == "X-Cost"
+
+    def test_before_request_sets_context(self) -> None:
+        """Test that before_request sets attribution context from headers."""
+        from tokenledger.middleware import FlaskMiddleware
+
+        mock_app = MagicMock()
+        before_request_fn = None
+
+        def capture_before_request(fn):
+            nonlocal before_request_fn
+            before_request_fn = fn
+
+        mock_app.before_request = capture_before_request
+        mock_app.after_request = MagicMock()
+
+        FlaskMiddleware(app=mock_app)
+
+        # Mock Flask request and g
+        mock_request = MagicMock()
+        headers_dict = {
+            "X-User-ID": "user123",
+            "X-Session-ID": "session456",
+            "X-Organization-ID": "org789",
+            "X-Feature": "chat",
+            "X-Team": "ml",
+            "X-Project": "chatbot",
+            "X-Cost-Center": "CC001",
+        }
+        mock_request.headers.get.side_effect = lambda x, default=None: headers_dict.get(x, default)
+        mock_request.path = "/api/test"
+        mock_request.method = "POST"
+
+        mock_g = MagicMock()
+        mock_tracker = MagicMock()
+        mock_tracker.config.default_metadata = {}
+
+        # Create mock flask module
+        mock_flask = MagicMock()
+        mock_flask.request = mock_request
+        mock_flask.g = mock_g
+
+        with (
+            patch.dict("sys.modules", {"flask": mock_flask}),
+            patch("tokenledger.tracker.get_tracker", return_value=mock_tracker),
+            patch("tokenledger.middleware.set_attribution_context") as mock_set_ctx,
+        ):
+            before_request_fn()
+
+            mock_set_ctx.assert_called_once()
+            ctx = mock_set_ctx.call_args[0][0]
+            assert ctx.user_id == "user123"
+            assert ctx.session_id == "session456"
+            assert ctx.organization_id == "org789"
+            assert ctx.feature == "chat"
+            assert ctx.team == "ml"
+            assert ctx.project == "chatbot"
+            assert ctx.cost_center == "CC001"
+            assert ctx.page == "/api/test"
+
+    def test_before_request_updates_tracker_metadata(self) -> None:
+        """Test that before_request updates tracker metadata."""
+        from tokenledger.middleware import FlaskMiddleware
+
+        mock_app = MagicMock()
+        before_request_fn = None
+
+        def capture_before_request(fn):
+            nonlocal before_request_fn
+            before_request_fn = fn
+
+        mock_app.before_request = capture_before_request
+        mock_app.after_request = MagicMock()
+
+        FlaskMiddleware(app=mock_app)
+
+        mock_request = MagicMock()
+        headers_dict = {
+            "X-User-ID": "user123",
+            "X-Session-ID": "session456",
+            "X-Organization-ID": "org789",
+        }
+        mock_request.headers.get.side_effect = lambda x, default=None: headers_dict.get(x, default)
+        mock_request.path = "/api/test"
+        mock_request.method = "GET"
+
+        mock_g = MagicMock()
+        mock_tracker = MagicMock()
+        mock_tracker.config.default_metadata = {}
+
+        mock_flask = MagicMock()
+        mock_flask.request = mock_request
+        mock_flask.g = mock_g
+
+        with (
+            patch.dict("sys.modules", {"flask": mock_flask}),
+            patch("tokenledger.tracker.get_tracker", return_value=mock_tracker),
+            patch("tokenledger.middleware.set_attribution_context"),
+        ):
+            before_request_fn()
+
+            # Check metadata was updated
+            assert mock_tracker.config.default_metadata["http_path"] == "/api/test"
+            assert mock_tracker.config.default_metadata["http_method"] == "GET"
+            assert mock_tracker.config.default_metadata["request_user_id"] == "user123"
+            assert mock_tracker.config.default_metadata["request_session_id"] == "session456"
+            assert mock_tracker.config.default_metadata["request_org_id"] == "org789"
+
+    def test_after_request_restores_metadata(self) -> None:
+        """Test that after_request restores original metadata."""
+        from tokenledger.middleware import FlaskMiddleware
+
+        mock_app = MagicMock()
+        after_request_fn = None
+
+        def capture_after_request(fn):
+            nonlocal after_request_fn
+            after_request_fn = fn
+
+        mock_app.before_request = MagicMock()
+        mock_app.after_request = capture_after_request
+
+        FlaskMiddleware(app=mock_app)
+
+        mock_g = MagicMock()
+        mock_g._tokenledger_original_metadata = {"original": "value"}
+        mock_g._tokenledger_context_token = MagicMock()
+
+        mock_tracker = MagicMock()
+        mock_tracker.config.default_metadata = {"modified": "data"}
+        mock_response = MagicMock()
+
+        mock_flask = MagicMock()
+        mock_flask.g = mock_g
+
+        with (
+            patch.dict("sys.modules", {"flask": mock_flask}),
+            patch("tokenledger.tracker.get_tracker", return_value=mock_tracker),
+            patch("tokenledger.middleware.reset_attribution_context") as mock_reset_ctx,
+        ):
+            result = after_request_fn(mock_response)
+
+            # Metadata should be restored
+            assert mock_tracker.config.default_metadata == {"original": "value"}
+
+            # Context should be reset
+            mock_reset_ctx.assert_called_once_with(mock_g._tokenledger_context_token)
+
+            # Response should be returned
+            assert result is mock_response
+
+    def test_after_request_handles_missing_attributes(self) -> None:
+        """Test that after_request handles missing g attributes gracefully."""
+        from tokenledger.middleware import FlaskMiddleware
+
+        mock_app = MagicMock()
+        after_request_fn = None
+
+        def capture_after_request(fn):
+            nonlocal after_request_fn
+            after_request_fn = fn
+
+        mock_app.before_request = MagicMock()
+        mock_app.after_request = capture_after_request
+
+        FlaskMiddleware(app=mock_app)
+
+        # Mock g without tokenledger attributes
+        mock_g = MagicMock(spec=[])  # Empty spec means no attributes
+        mock_response = MagicMock()
+
+        mock_flask = MagicMock()
+        mock_flask.g = mock_g
+
+        with (
+            patch.dict("sys.modules", {"flask": mock_flask}),
+            patch("tokenledger.middleware.reset_attribution_context") as mock_reset_ctx,
+        ):
+            result = after_request_fn(mock_response)
+
+            # Should not call reset since attribute doesn't exist
+            mock_reset_ctx.assert_not_called()
+
+            # Response should still be returned
+            assert result is mock_response
