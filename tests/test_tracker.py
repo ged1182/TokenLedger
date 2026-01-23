@@ -867,9 +867,7 @@ class TestTrackerFlushThread:
 
     @patch("tokenledger.tracker.TokenTracker._get_connection")
     @patch("tokenledger.tracker.time.sleep")
-    def test_flush_loop_calls_flush(
-        self, mock_sleep: MagicMock, mock_get_conn: MagicMock
-    ) -> None:
+    def test_flush_loop_calls_flush(self, mock_sleep: MagicMock, mock_get_conn: MagicMock) -> None:
         """Test that _flush_loop periodically calls flush."""
         config = TokenLedgerConfig(
             database_url="postgresql://test:test@localhost/test",
@@ -886,7 +884,6 @@ class TestTrackerFlushThread:
             call_count += 1
             if call_count >= 2:
                 tracker._running = False
-            return None
 
         mock_sleep.side_effect = side_effect
         tracker.flush = MagicMock()
@@ -916,7 +913,6 @@ class TestTrackerFlushThread:
             call_count += 1
             if call_count >= 2:
                 tracker._running = False
-            return None
 
         mock_sleep.side_effect = sleep_side_effect
         tracker.flush = MagicMock(side_effect=Exception("Flush error"))
@@ -1016,9 +1012,7 @@ class TestTrackerAttributionContextComplete:
         assert tracked_event.metadata_extra == {"ctx_key": "ctx_value"}
 
     @patch("tokenledger.tracker.TokenTracker._get_connection")
-    def test_track_metadata_extra_merges_with_existing(
-        self, mock_get_conn: MagicMock
-    ) -> None:
+    def test_track_metadata_extra_merges_with_existing(self, mock_get_conn: MagicMock) -> None:
         """Test that metadata_extra from context merges with event metadata_extra."""
         from tokenledger.context import attribution
 

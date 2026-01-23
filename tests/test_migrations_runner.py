@@ -199,9 +199,7 @@ class TestMigrationRunner:
             mock_rev = MagicMock()
             mock_script.get_revision.return_value = mock_rev
 
-            result = runner._safe_walk_revisions(
-                mock_script, "head", "base", fallback=["rev1"]
-            )
+            result = runner._safe_walk_revisions(mock_script, "head", "base", fallback=["rev1"])
 
             assert result == [mock_rev]
             mock_script.get_revision.assert_called_with("rev1")
@@ -268,9 +266,7 @@ class TestMigrationRunner:
         ):
             from tokenledger.migrations.runner import MigrationRunner
 
-            runner = MigrationRunner(
-                database_url="postgresql://test@localhost/db", schema="custom"
-            )
+            runner = MigrationRunner(database_url="postgresql://test@localhost/db", schema="custom")
 
             mock_conn = MagicMock()
             mock_engine.return_value.connect.return_value.__enter__ = MagicMock(

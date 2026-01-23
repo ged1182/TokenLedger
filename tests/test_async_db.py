@@ -511,9 +511,7 @@ class TestGlobalAsyncDbFunctions:
             result = await async_db_module.init_async_db(min_size=3, max_size=15)
 
             mock_get.assert_called_once()
-            mock_db.initialize.assert_called_once_with(
-                min_size=3, max_size=15, create_tables=True
-            )
+            mock_db.initialize.assert_called_once_with(min_size=3, max_size=15, create_tables=True)
             assert result is mock_db
 
         # Cleanup
