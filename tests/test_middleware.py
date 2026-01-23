@@ -241,7 +241,7 @@ class TestFlaskMiddleware:
         from tokenledger.middleware import FlaskMiddleware
 
         mock_app = MagicMock()
-        middleware = FlaskMiddleware(app=mock_app)
+        FlaskMiddleware(app=mock_app)
 
         # init_app should have been called
         assert mock_app.before_request.called

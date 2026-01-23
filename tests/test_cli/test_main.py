@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -26,7 +26,7 @@ class TestServeCommand:
 
     def test_serve_command_with_defaults(self) -> None:
         """Test serve command starts server with defaults."""
-        with patch("uvicorn.run") as mock_run:
+        with patch("uvicorn.run"):
             result = runner.invoke(app, ["serve"], input="\x03")  # Ctrl+C to exit
             # Server is called but will be interrupted
             assert "Starting TokenLedger server" in result.output
@@ -34,7 +34,7 @@ class TestServeCommand:
     def test_serve_command_custom_options(self) -> None:
         """Test serve command with custom options."""
         with patch("uvicorn.run") as mock_run:
-            result = runner.invoke(app, ["serve", "--host", "127.0.0.1", "--port", "9000"])
+            runner.invoke(app, ["serve", "--host", "127.0.0.1", "--port", "9000"])
             mock_run.assert_called_once()
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs["host"] == "127.0.0.1"
@@ -43,7 +43,7 @@ class TestServeCommand:
     def test_serve_command_with_reload(self) -> None:
         """Test serve command with reload option."""
         with patch("uvicorn.run") as mock_run:
-            result = runner.invoke(app, ["serve", "--reload"])
+            runner.invoke(app, ["serve", "--reload"])
             mock_run.assert_called_once()
             call_kwargs = mock_run.call_args[1]
             assert call_kwargs["reload"] is True
